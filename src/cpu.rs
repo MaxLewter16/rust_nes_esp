@@ -135,12 +135,14 @@ impl CPU {
     }
 
     fn get_zero_page(&mut self) -> u8 {
+        // assume upper address byte is 0
         let tmp = self.memory[self.memory[self.program_counter] as u16];
         self.program_counter += 1;
         tmp
     }
 
     fn get_zero_page_xy(&mut self, reg: Register) -> u8 {
+        // assume upper address byte is 0
         let address = match reg {
             Register::X => {
                 self.memory[self.program_counter] + self.idx_register_x
@@ -152,6 +154,14 @@ impl CPU {
         let tmp = self.memory[address as u16];
         self.program_counter += 1;
         tmp
+    }
+
+    fn get_absolute(&mut self) -> u16 {
+        let low = self.memory[self.program_counter] as u16;       // Fetch low byte
+        let high = self.memory[self.program_counter + 1] as u16;  // Fetch high byte
+        self.program_counter += 2;
+
+        (high << 8) | low  // Combine into 16-bit address (little-endian)
     }
 
     pub fn or_immediate(&mut self) {
