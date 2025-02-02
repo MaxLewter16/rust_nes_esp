@@ -1,15 +1,10 @@
 use std::ops::Index;
 
+use crate::opmap::OP_MAP;
+
 // Primary Registers?
 const STACK_RESET: u8 = 0xff;
 const STACK: u16 = 0x0100;
-
-const OP_MAP: [fn(&mut CPU) -> (); 256] = {
-    let mut map = [CPU::noop as fn(&mut CPU); 256];
-    map[0x09] = CPU::or_immediate as fn(&mut CPU);
-    map[0x0d] = CPU::or_absolute as fn(&mut CPU);
-    map
-};
 
 struct Program {
     file: Vec<u8>,
