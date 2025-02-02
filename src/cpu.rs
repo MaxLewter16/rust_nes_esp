@@ -7,6 +7,10 @@ struct Program {
 }
 
 impl Program {
+    fn from_file(path: String) -> Self {
+        //read .nes file and extract binary
+    }
+
     fn get(&self, location: u16) -> u8 {
         self.file[location as usize]
     }
@@ -32,12 +36,14 @@ pub enum ProcessorStatusFlag{
     Negative = 1 << 7
 }
 
+// The center three opcode bits, determine addressing mode for every instruction which accesses data
 #[repr(u8)]
 pub enum AddressingMode {
     XIndexIndirect = 0,
     Immediate = 0b00001000,
 }
 
+// The lowest two opcode bits
 #[repr(u8)]
 pub enum OpGroup {
     Zero = 0,
@@ -45,6 +51,7 @@ pub enum OpGroup {
     Two = 0x2,
 }
 
+// The upper three opcode bits, named after the arithemetic instruction with corresponding bits
 #[repr(u8)]
 pub enum InstrOp {
     Or = 0,
@@ -123,13 +130,15 @@ impl CPU {
 
     // named breaki because 'break' is a keyword in rust
     fn breaki(&mut self) {
-
+        //execute break instruction
     }
 
     fn get_immediate(&mut self) {
-
+        //read next byte in Program, advancing program counter
     }
 
-    fn or(&mut self, data: u8) {};
+    fn or(&mut self, data: u8) {
+        //do arithmetic 'or'
+    }
 
 }
