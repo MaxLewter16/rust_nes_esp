@@ -126,6 +126,14 @@ impl CPU {
         //read next byte in Program, advancing program counter
     }
 
+    fn get_absolute(&mut self) -> u16 {
+        let low = self.memory[self.program_counter] as u16;       // Fetch low byte
+        let high = self.memory[self.program_counter + 1] as u16;  // Fetch high byte
+        self.program_counter += 2; 
+
+        (high << 8) | low  // Combine into 16-bit address (little-endian)
+    }
+
     pub fn or_immediate(&mut self) {
         self.get_immediate();
         //do arithmetic 'or'
