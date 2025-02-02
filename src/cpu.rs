@@ -1,16 +1,21 @@
+use std::ops::Index;
+
 // Primary Registers?
 const STACK_RESET: u8 = 0xff;
 const STACK: u16 = 0x0100;
+
+const OP_MAP: [fn(&mut CPU) -> (); 256] = {
+    let mut map = [CPU::noop as fn(&mut CPU); 256];
+    map[0x09] = CPU::or_immediate as fn(&mut CPU);
+    map[0x0d] = CPU::or_absolute as fn(&mut CPU);
+    map
+};
 
 struct Program {
     file: Vec<u8>,
 }
 
 impl Program {
-    fn from_file(path: String) -> Self {
-        //read .nes file and extract binary
-    }
-
     fn get(&self, location: u16) -> u8 {
         self.file[location as usize]
     }
@@ -93,7 +98,7 @@ impl ProcessorStatus {
 }
 
 pub struct CPU {
-    pub program: Program,
+    pub memory: Program,
     pub program_counter: u16,
     pub stack_pointer: u8,
     pub accumulator: u8,
@@ -102,10 +107,48 @@ pub struct CPU {
     pub processor_status: ProcessorStatus,
 }
 
+struct Memory {
+    program: Program,
+    mmio: MMIO,
+    ram: [u8; 0x2000],
+}
+
+impl Index<u16> for Memory {
+    type Output = u8;
+    fn index(&self, address: u16) -> &Self::Output {
+        if address < 0x2000 { self.ram[address] }
+        else if address < 0x4020 {self.mmio.send_write(address)}
+        else if address < 0x6000 {
+            //Expansion ROM
+            &0u8
+        }
+        else if address < 0x8000 {
+            //SRAM
+            &0u8
+        }
+        else {
+            &self.program.get(address)
+        }
+    }
+}
+
+impl Memory {
+    fn from_file(path: String) -> Self {
+
+    }
+
+    fn mmio(&self, address: u16) {
+        match address {
+            0x2000 => //PPU control register 1
+        }
+    }
+}
+
+
 impl CPU {
     pub fn new() -> Self {
         CPU {
-            program: Program::from_file(""),
+            memory: Memory::from_file(""),
             program_counter: 0,
             idx_register_x: 0,
             idx_register_y: 0,
@@ -116,20 +159,7 @@ impl CPU {
     }
 
     fn advance(&mut self) {
-        let current = self.program.get(self.program_counter);
-        match Opcode::from(current) {
-            //some instructions are unique and we match the whole opcode
-            BRK => self.breaki(),
-            // some groups of instructions have similar behavior we can unify
-            Opcode{instr, mode: AddressingMode::Immediate, group: OpGroup::Two} => {
-                let imm = self.get_immediate();
-                match instr {
-                    InstrOp::Or => self.or(imm),
-                    _ => unimplemented!(),
-                }
-            }
-            _ => unimplemented!(),
-        }
+        OP_MAP[self.memory[self.program_counter]](self);
     }
 
     // named breaki because 'break' is a keyword in rust
@@ -141,8 +171,23 @@ impl CPU {
         //read next byte in Program, advancing program counter
     }
 
-    fn or(&mut self, data: u8) {
+    pub fn or_immediate(&mut self) {
+        self.get_immediate();
         //do arithmetic 'or'
+        self.do_or();
     }
 
+    pub fn or_absolute(&mut self) {
+        self.get_absolute();
+        self.do_or();
+    }
+
+    #[inline]
+    pub fn do_or(&mut self) {
+
+    }
+
+    pub fn noop(&mut self) {}
 }
+
+
