@@ -105,14 +105,14 @@ impl CPU {
     }
 
     fn advance(&mut self) {
-        let current = self.program.current();
-        match(Opcode::from(current)) {
+        let current = self.program.get(self.program_counter);
+        match Opcode::from(current) {
             //some instructions are unique and we match the whole opcode
             BRK => self.breaki(),
             // some groups of instructions have similar behavior we can unify
             Opcode{instr, mode: AddressingMode::Immediate, group: OpGroup::Two} => {
                 let imm = self.get_immediate();
-                match(instr) {
+                match instr {
                     InstrOp::Or => self.or(imm),
                     _ => unimplemented!(),
                 }
