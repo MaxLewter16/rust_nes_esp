@@ -41,46 +41,6 @@ pub enum ProcessorStatusFlag{
     Negative = 1 << 7
 }
 
-// The center three opcode bits, determine addressing mode for every instruction which accesses data
-#[repr(u8)]
-#[derive(PartialEq, Debug)]
-pub enum AddressingMode {
-    XIndexIndirect = 0,
-    Immediate = 0b00001000,
-}
-
-// The lowest two opcode bits
-#[repr(u8)]
-#[derive(PartialEq, Debug)]
-pub enum OpGroup {
-    Zero = 0,
-    One = 0x1,
-    Two = 0x2,
-}
-
-// The upper three opcode bits, named after the arithemetic instruction with corresponding bits
-#[repr(u8)]
-#[derive(PartialEq, Debug)]
-pub enum InstrOp {
-    Or = 0,
-}
-
-#[derive(PartialEq, Debug)]
-struct Opcode {
-    instr: InstrOp,
-    mode: AddressingMode,
-    group: OpGroup
-}
-
-impl From<u8> for Opcode {
-    // should attempt to parse byte into valid opcode, return None if byte is invalid
-    fn from(value: u8) -> Option<Self> {
-
-    }
-}
-
-const BRK: Opcode = Opcode{instr: InstrOp::Or, mode: AddressingMode::XIndexIndirect, group: OpGroup::Zero};
-
 pub struct ProcessorStatus{
     pub flags: u8
 }
