@@ -12,7 +12,7 @@ struct Program {
 
 impl Program {
     fn get(&self, location: u16) -> u8 {
-        self.file[location as usize]
+        self.file[(location - 0x8000) as usize]
     }
 }
 
@@ -53,7 +53,7 @@ impl ProcessorStatus {
 }
 
 pub struct CPU {
-    pub memory: Program,
+    pub memory: Memory,
     pub program_counter: u16,
     pub stack_pointer: u8,
     pub accumulator: u8,
@@ -114,7 +114,9 @@ impl CPU {
     }
 
     fn advance(&mut self) {
-        OP_MAP[self.memory[self.program_counter]](self);
+        let i = OP_MAP[self.memory[self.program_counter] as usize];
+        self.program_counter += 1;
+        i(self);
     }
 
     // named breaki because 'break' is a keyword in rust
@@ -123,7 +125,9 @@ impl CPU {
     }
 
     fn get_immediate(&mut self) -> u8 {
-        //read next byte in Program, advancing program counter
+        let tmp = self.memory[self.program_counter];
+        self.program_counter += 1;
+        tmp
     }
 
     pub fn or_immediate(&mut self) {
