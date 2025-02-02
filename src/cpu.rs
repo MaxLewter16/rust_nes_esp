@@ -38,6 +38,7 @@ pub enum ProcessorStatusFlag{
 
 // The center three opcode bits, determine addressing mode for every instruction which accesses data
 #[repr(u8)]
+#[derive(PartialEq, Debug)]
 pub enum AddressingMode {
     XIndexIndirect = 0,
     Immediate = 0b00001000,
@@ -45,6 +46,7 @@ pub enum AddressingMode {
 
 // The lowest two opcode bits
 #[repr(u8)]
+#[derive(PartialEq, Debug)]
 pub enum OpGroup {
     Zero = 0,
     One = 0x1,
@@ -53,10 +55,12 @@ pub enum OpGroup {
 
 // The upper three opcode bits, named after the arithemetic instruction with corresponding bits
 #[repr(u8)]
+#[derive(PartialEq, Debug)]
 pub enum InstrOp {
     Or = 0,
 }
 
+#[derive(PartialEq, Debug)]
 struct Opcode {
     instr: InstrOp,
     mode: AddressingMode,
@@ -133,7 +137,7 @@ impl CPU {
         //execute break instruction
     }
 
-    fn get_immediate(&mut self) {
+    fn get_immediate(&mut self) -> u8 {
         //read next byte in Program, advancing program counter
     }
 
