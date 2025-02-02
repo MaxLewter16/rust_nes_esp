@@ -99,6 +99,10 @@ impl Memory {
     }
 }
 
+enum Register {
+    X,
+    Y
+}
 
 impl CPU {
     pub fn new() -> Self {
@@ -126,6 +130,26 @@ impl CPU {
 
     fn get_immediate(&mut self) -> u8 {
         let tmp = self.memory[self.program_counter];
+        self.program_counter += 1;
+        tmp
+    }
+
+    fn get_zero_page(&mut self) -> u8 {
+        let tmp = self.memory[self.memory[self.program_counter] as u16];
+        self.program_counter += 1;
+        tmp
+    }
+
+    fn get_zero_page_xy(&mut self, reg: Register) -> u8 {
+        let address = match reg {
+            Register::X => {
+                self.memory[self.program_counter] + self.idx_register_x
+            },
+            Register::Y => {
+                self.memory[self.program_counter] + self.idx_register_y
+            }
+        };
+        let tmp = self.memory[address as u16];
         self.program_counter += 1;
         tmp
     }
