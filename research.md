@@ -23,3 +23,5 @@ What really is required for emulation of NES?
 The only two resources that the CPU has access to are the Memory Map and CPU Registers.
 
 From a programming standpoint, the memory map is just a continuous array of 1-byte cells. NES CPU uses 16-bit for memory addressing, which means that it can address 65536 different memory cells. The NES platform had only 2 KiB of RAM connected to the CPU
+
+![alt text](image-1.png)
