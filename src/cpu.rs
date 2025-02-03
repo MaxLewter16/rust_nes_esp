@@ -1,4 +1,4 @@
-use std::ops::Index;
+use std::{ops::Index, process::id};
 
 use crate::opmap::OP_MAP;
 
@@ -149,6 +149,22 @@ impl CPU {
             },
             Register::Y => {
                 self.memory[self.program_counter] + self.idx_register_y
+            }
+        };
+        let tmp = self.memory[address as u16];
+        self.program_counter += 1;
+        tmp
+    }
+
+    fn get_zero_page_indirect(&mut self, reg: Register) -> u8 {
+        let address = match reg {
+            Register::X => {
+                let indirect_address = self.memory[self.program_counter] + self.idx_register_x;
+                u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]])
+            },
+            Register::Y => {
+                let indirect_address = self.memory[self.program_counter];
+                u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]]) + self.idx_register_y as u16
             }
         };
         let tmp = self.memory[address as u16];
