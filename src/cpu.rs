@@ -164,6 +164,13 @@ impl CPU {
         (high << 8) | low  // Combine into 16-bit address (little-endian)
     }
 
+    fn get_indexed_absolute(&mut self, reg: Register) -> u16 {
+        match reg {
+            Register::X => self.get_absolute() + self.idx_register_x as u16,
+            Register::Y => self.get_absolute() + self.idx_register_y as u16,
+        } 
+    }
+
     pub fn or_immediate(&mut self) {
         self.get_immediate();
         //do arithmetic 'or'
