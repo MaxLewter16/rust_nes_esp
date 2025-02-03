@@ -171,34 +171,42 @@ impl CPU {
         self.program_counter += 1;
         tmp
     }
+    /// Fetches an absolute address but does NOT return the value.
+    fn get_absolute_address(&mut self) -> u16 {
+        let low = self.memory[self.program_counter];
+        let high = self.memory[self.program_counter + 1];
 
-    fn get_absolute(&mut self) -> u16 {
-        let low = self.memory[self.program_counter] as u16;       // Fetch low byte
-        let high = self.memory[self.program_counter + 1] as u16;  // Fetch high byte
-        self.program_counter += 2;
+        self.program_counter += 2; 
 
-        (high << 8) | low  // Combine into 16-bit address (little-endian)
+        u16::from_le_bytes([low, high])
+    }  
+
+    // Fetch the value at the absolute address
+    fn get_absolute(&mut self) -> u8 {
+        self.memory[self.get_absolute_address()] 
     }
 
-    fn get_indexed_absolute(&mut self, reg: Register) -> u16 {
-        match reg {
-            Register::X => self.get_absolute() + self.idx_register_x as u16,
-            Register::Y => self.get_absolute() + self.idx_register_y as u16,
-        } 
-    }
-    fn get_absolute_indirect(&mut self) -> u16 {
-        let pointer = self.get_absolute();  // Fetch pointer address
-        let low = self.memory[pointer] as u16;
-        
-        // Handle 6502 page boundary bug
-        let high = if pointer & 0xFF == 0xFF {
-            self.memory[pointer & 0xFF00] as u16  // Wrap around to same page
-        } else {
-            self.memory[pointer + 1] as u16
+    /// Fetches an indexed absolute address (Absolute,X or Absolute,Y) and returns the value stored at that address.
+    fn get_absolute_xy(&mut self, reg: Register) -> u8 {
+        let base_addr = self.get_absolute_address(); 
+        let indexed_addr = match reg {
+            Register::X => base_addr.wrapping_add(self.idx_register_x as u16),
+            Register::Y => base_addr.wrapping_add(self.idx_register_y as u16),
         };
-    
-        (high << 8) | low  // Combine into final 16-bit address
+
+        self.memory[indexed_addr] 
     }
+
+    /// Fetches an absolute indirect address value(used for JMP (indirect)).
+    fn get_absolute_indirect(&mut self) -> u8 {
+        let addr_ptr = self.get_absolute_address();
+        let low = self.memory[addr_ptr];
+        let high = self.memory[addr_ptr.wrapping_add(1)];
+
+        let target_addr = u16::from_le_bytes([low, high]);
+        self.memory[target_addr]
+    }
+}
 
     
 
