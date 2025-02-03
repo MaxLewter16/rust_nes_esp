@@ -182,6 +182,7 @@ enum Register {
     Y
 }
 
+
 impl CPU {
     pub fn with_program(program: Vec<u8>) -> Self {
         CPU {
@@ -290,6 +291,66 @@ impl CPU {
     pub fn store_a_absolute(&mut self) {
         let address = self.get_absolute();
         self.store(address, self.accumulator);
+    }
+
+    pub fn store_a_absolute_x(&mut self) {
+        let address = self.get_absolute_xy(Register::X);
+        self.store(address, self.accumulator);
+    }
+
+    pub fn store_a_absolute_y(&mut self) {
+        let address = self.get_absolute_xy(Register::Y);
+        self.store(address, self.accumulator);
+    }
+
+    pub fn store_a_zero_page(&mut self) {
+        let address = self.get_zero_page();
+        self.store(address, self.accumulator);
+    }
+
+    pub fn store_a_zero_page_x(&mut self) {
+        let address = self.get_zero_page_xy(Register::X);
+        self.store(address, self.accumulator);
+    }
+
+    pub fn store_a_zero_page_x_indirect(&mut self) {
+        let address = self.get_zero_page_xy_indirect(Register::X);
+        self.store(address, self.accumulator);
+    }
+
+    pub fn store_a_zero_page_y_indirect(&mut self) {
+        let address = self.get_zero_page_xy_indirect(Register::Y);
+        self.store(address, self.accumulator);
+    }
+
+    pub fn store_x_absolute(&mut self) {
+        let address = self.get_absolute();
+        self.store(address, self.idx_register_x);
+    }
+
+    pub fn store_x_zero_page(&mut self) {
+        let address = self.get_zero_page();
+        self.store(address, self.idx_register_x);
+    }
+
+    pub fn store_x_zero_page_y(&mut self) {
+        let address = self.get_zero_page_xy(Register::Y);
+        self.store(address, self.idx_register_x);
+    }
+
+    pub fn store_y_absolute(&mut self) {
+        let address = self.get_absolute();
+        self.store(address, self.idx_register_y);
+    }
+
+    pub fn store_y_zero_page(&mut self) {
+        let address = self.get_zero_page();
+        self.store(address, self.idx_register_y);
+    }
+
+    pub fn store_y_zero_page_x(&mut self) {
+        let address = self.get_zero_page_xy(Register::X);
+        self.store(address, self.idx_register_y);
     }
 
     pub fn store(&mut self, address: u16, data: u8) {
