@@ -118,7 +118,7 @@ pub struct CPU {
 
 struct Memory {
     program: Program,
-    ram: [u8; 0x2000],
+    ram: [u8; (MMIO - RAM) as usize],
 }
 
 impl Index<u16> for Memory {
@@ -181,7 +181,6 @@ enum Register {
     X,
     Y
 }
-
 
 impl CPU {
     pub fn with_program(program: Vec<u8>) -> Self {
@@ -361,6 +360,7 @@ impl CPU {
         self.store(address, self.idx_register_y);
     }
 
+    #[inline]
     pub fn store(&mut self, address: u16, data: u8) {
         self.memory.write(address, data);
     }
