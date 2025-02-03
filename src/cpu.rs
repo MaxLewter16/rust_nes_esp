@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut, Index}};
+use std::{io::Write, ops::{Deref, DerefMut, Index, IndexMut}};
 
 use crate::opmap::OP_MAP;
 
@@ -22,6 +22,12 @@ impl Index<u16> for Program {
     type Output = u8;
     fn index(&self, address: u16) -> &Self::Output {
         &self.file[(address - PROGRAM_ROM) as usize]
+    }
+}
+
+impl IndexMut<u16> for Program {
+    fn index_mut(&mut self, address: u16) -> &mut Self::Output {
+        &mut self.file[(address - 0x8000) as usize]
     }
 }
 
@@ -135,6 +141,20 @@ impl Index<u16> for Memory {
 }
 
 impl Memory {
+    fn write(&mut self, address: u16, data: u8) {
+        if address < 0x2000 { self.ram[address as usize] = data }
+        else if address < 0x4020 {self.mmio_write(address, data)}
+        else if address < 0x6000 {
+            //Expansion ROM
+        }
+        else if address < 0x8000 {
+            //SRAM
+        }
+        else {
+            self.program[address] = data
+        }
+    }
+
     fn from_program(mut program: Vec<u8>) -> Self {
         program.resize(0x10000 - PROGRAM_ROM as usize, 0);
         Memory { program: Program{file: program.into_boxed_slice()}, ram: [0u8; (MMIO - RAM) as usize]}
@@ -145,6 +165,12 @@ impl Memory {
     }
 
     fn mmio(&self, address: u16) -> &u8 {
+        //TODO
+        // MMIO_MAP[address]();
+        unimplemented!()
+    }
+
+    fn mmio_write(&self, address: u16, data: u8) {
         //TODO
         // MMIO_MAP[address]();
         unimplemented!()
@@ -187,51 +213,50 @@ impl CPU {
         i(self);
     }
 
-    fn get_immediate(&mut self) -> u8 {
-        let tmp = self.memory[self.program_counter];
+    fn get_immediate(&mut self) -> u16 {
+        let pc = self.program_counter;
         self.program_counter += 1;
-        tmp
+        pc
     }
 
-    fn get_zero_page(&mut self) -> u8 {
-        // assume upper address byte is 0
-        let tmp = self.memory[self.memory[self.program_counter] as u16];
+    fn get_zero_page(&mut self) -> u16 {
+        let pc = self.program_counter;
         self.program_counter += 1;
-        tmp
+        // assume upper address byte is 0
+        self.memory[pc] as u16
     }
 
-    fn get_zero_page_xy(&mut self, reg: Register) -> u8 {
+    fn get_zero_page_xy(&mut self, reg: Register) -> u16 {
+        let pc = self.program_counter;
         // assume upper address byte is 0
-        let address = match reg {
+        self.program_counter += 1;
+        match reg {
             Register::X => {
-                self.memory[self.program_counter] + self.idx_register_x
+                (self.memory[pc] + self.idx_register_x) as u16
             },
             Register::Y => {
-                self.memory[self.program_counter] + self.idx_register_y
+                (self.memory[pc] + self.idx_register_y) as u16
             }
-        };
-        let tmp = self.memory[address as u16];
-        self.program_counter += 1;
-        tmp
+        }
     }
 
-    fn get_zero_page_xy_indirect(&mut self, reg: Register) -> u8 {
-        let address = match reg {
+    fn get_zero_page_xy_indirect(&mut self, reg: Register) -> u16 {
+        let pc = self.program_counter;
+        self.program_counter += 1;
+        match reg {
             Register::X => {
-                let indirect_address = self.memory[self.program_counter] + self.idx_register_x;
+                let indirect_address = self.memory[pc] + self.idx_register_x;
                 u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]])
             },
             Register::Y => {
-                let indirect_address = self.memory[self.program_counter];
+                let indirect_address = self.memory[pc];
                 u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]]) + self.idx_register_y as u16
             }
-        };
-        let tmp = self.memory[address as u16];
-        self.program_counter += 1;
-        tmp
+        }
     }
+
     /// Fetches an absolute address but does NOT return the value.
-    fn get_absolute_address(&mut self) -> u16 {
+    fn get_absolute(&mut self) -> u16 {
         let low = self.memory[self.program_counter];
         let high = self.memory[self.program_counter + 1];
 
@@ -240,75 +265,83 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
-    // Fetch the value at the absolute address
-    fn get_absolute(&mut self) -> u8 {
-        let address = self.get_absolute_address();
-        self.memory[address]
-    }
-
     /// Fetches an indexed absolute address (Absolute,X or Absolute,Y) and returns the value stored at that address.
-    fn get_absolute_xy(&mut self, reg: Register) -> u8 {
-        let base_addr = self.get_absolute_address();
-        let indexed_addr = match reg {
+    fn get_absolute_xy(&mut self, reg: Register) -> u16 {
+        let base_addr = self.get_absolute();
+        match reg {
             Register::X => base_addr.wrapping_add(self.idx_register_x as u16),
             Register::Y => base_addr.wrapping_add(self.idx_register_y as u16),
-        };
-
-        self.memory[indexed_addr]
+        }
     }
 
     /// Fetches an absolute indirect address value(used for JMP (indirect)).
-    fn get_absolute_indirect(&mut self) -> u8 {
-        let addr_ptr = self.get_absolute_address();
+    fn get_absolute_indirect(&mut self) -> u16 {
+        let addr_ptr = self.get_absolute();
         let low = self.memory[addr_ptr];
         let high = self.memory[addr_ptr.wrapping_add(1)];
 
-        let target_addr = u16::from_le_bytes([low, high]);
-        self.memory[target_addr]
+        u16::from_le_bytes([low, high])
+    }
+
+    pub fn store_a_absolute(&mut self) {
+        let address = self.get_absolute();
+        self.store(address, self.accumulator);
+    }
+
+    pub fn store(&mut self, address: u16, data: u8) {
+        self.memory.write(address, data);
     }
 
     pub fn or_immediate(&mut self) {
-        let data = self.get_immediate();
-        self.do_or(data);
+        let address = self.get_immediate();
+        let data = self.memory[address];
+        self.or(data);
     }
 
     pub fn or_absolute(&mut self) {
-        let data = self.get_absolute();
-        self.do_or(data);
+        let address = self.get_absolute();
+        let data = self.memory[address];
+        self.or(data);
     }
 
     pub fn or_absolute_x(&mut self) {
-        let data = self.get_absolute_xy(Register::X);
-        self.do_or(data);
+        let address = self.get_absolute_xy(Register::X);
+        let data = self.memory[address];
+        self.or(data);
     }
 
     pub fn or_absolute_y(&mut self) {
-        let data = self.get_absolute_xy(Register::Y);
-        self.do_or(data);
+        let address = self.get_absolute_xy(Register::Y);
+        let data = self.memory[address];
+        self.or(data);
     }
 
     pub fn or_zero_page(&mut self) {
-        let data = self.get_zero_page();
-        self.do_or(data);
+        let address = self.get_zero_page();
+        let data = self.memory[address];
+        self.or(data);
     }
 
     pub fn or_zero_page_x(&mut self) {
-        let data = self.get_zero_page_xy(Register::X);
-        self.do_or(data);
+        let address = self.get_zero_page_xy(Register::X);
+        let data = self.memory[address];
+        self.or(data);
     }
 
     pub fn or_zero_page_x_indirect(&mut self) {
-        let data = self.get_zero_page_xy_indirect(Register::X);
-        self.do_or(data);
+        let address = self.get_zero_page_xy_indirect(Register::X);
+        let data = self.memory[address];
+        self.or(data);
     }
 
     pub fn or_zero_page_y_indirect(&mut self) {
-        let data = self.get_zero_page_xy_indirect(Register::Y);
-        self.do_or(data);
+        let address = self.get_zero_page_xy_indirect(Register::Y);
+        let data = self.memory[address];
+        self.or(data);
     }
 
     #[inline]
-    pub fn do_or(&mut self, data: u8) {
+    pub fn or(&mut self, data: u8) {
         self.accumulator |= data;
         //clear relevant flags
         *self.processor_status &= !(*ProcessorStatusFlag::Zero | *ProcessorStatusFlag::Negative);
