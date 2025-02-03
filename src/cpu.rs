@@ -123,7 +123,14 @@ impl Index<u16> for Memory {
         else {
             &self.program[address]
         }
-    }
+    //      Possible refactor, memory needs to be mirrored and this handles out of bounds address
+    //     match address {
+    //         0x0000..=0x1FFF => &self.ram[(address % 0x0800) as usize], // Mirror every 2 KB
+    //         0x2000..=0x3FFF => self.mmio(0x2000 + (address % 8)), // Mirrors every 8 bytes
+    //         0x6000..=0x7FFF => &0u8,  // SRAM (not yet implemented)
+    //         0x8000..=0xFFFF => &self.program[address],
+    //         _ => panic!("Invalid memory access: {:#06X}", address),
+    // }
 }
 
 impl Memory {
@@ -153,7 +160,7 @@ impl CPU {
         CPU {
             memory: Memory::from_program(program),
             program_counter: 0x8000,
-            stack_pointer: 0,
+            stack_pointer: STACK_RESET,
             accumulator: 0,
             idx_register_x: 0,
             idx_register_y: 0,
