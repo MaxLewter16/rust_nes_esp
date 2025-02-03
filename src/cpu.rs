@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut, Index}, process::id};
+use std::{ops::{Deref, DerefMut, Index}};
 
 use crate::opmap::OP_MAP;
 
@@ -320,6 +320,8 @@ mod tests {
         let mut cpu = CPU::with_program(vec![0x09, 0xaa]);
         cpu.advance();
         assert_eq!(cpu.accumulator, 0xaa);
+        assert_eq!(cpu.program_counter, 0x8002);
+        assert_eq!(*cpu.processor_status, *ProcessorStatusFlag::Negative);
     }
 }
 
