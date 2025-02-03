@@ -1,4 +1,4 @@
-use std::{ops::Index, process::id};
+use std::{ops::{Deref, DerefMut, Index}, process::id};
 
 use crate::opmap::OP_MAP;
 
@@ -36,6 +36,24 @@ pub enum ProcessorStatusFlag{
     Negative = 1 << 7
 }
 
+impl Deref for ProcessorStatusFlag {
+    type Target = u8;
+
+    fn deref(&self) -> &Self::Target {
+        // safe because of primitive representation
+        // see: https://doc.rust-lang.org/reference/items/enumerations.html
+        unsafe { &*(self as *const Self as *const u8) }
+    }
+}
+
+impl DerefMut for ProcessorStatusFlag {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // safe because of primitive representation
+        // see: https://doc.rust-lang.org/reference/items/enumerations.html
+        unsafe { &mut *(self as *mut Self as *mut u8) }
+    }
+}
+
 pub struct ProcessorStatus{
     pub flags: u8
 }
@@ -49,6 +67,24 @@ impl ProcessorStatus {
     }
     pub fn clear(&mut self, flag: ProcessorStatusFlag) {
         self.flags &= !(flag as u8);
+    }
+}
+
+impl Deref for ProcessorStatus {
+    type Target = u8;
+
+    fn deref(&self) -> &Self::Target {
+        // safe because of primitive representation
+        // see: https://doc.rust-lang.org/reference/items/enumerations.html
+        unsafe { &*(self as *const Self as *const u8) }
+    }
+}
+
+impl DerefMut for ProcessorStatus {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // safe because of primitive representation
+        // see: https://doc.rust-lang.org/reference/items/enumerations.html
+        unsafe { &mut *(self as *mut Self as *mut u8) }
     }
 }
 
@@ -184,38 +220,36 @@ impl CPU {
         match reg {
             Register::X => self.get_absolute() + self.idx_register_x as u16,
             Register::Y => self.get_absolute() + self.idx_register_y as u16,
-        } 
+        }
     }
     fn get_absolute_indirect(&mut self) -> u16 {
         let pointer = self.get_absolute();  // Fetch pointer address
         let low = self.memory[pointer] as u16;
-        
+
         // Handle 6502 page boundary bug
         let high = if pointer & 0xFF == 0xFF {
             self.memory[pointer & 0xFF00] as u16  // Wrap around to same page
         } else {
             self.memory[pointer + 1] as u16
         };
-    
+
         (high << 8) | low  // Combine into final 16-bit address
     }
 
-    
+
 
     pub fn or_immediate(&mut self) {
-        self.get_immediate();
-        //do arithmetic 'or'
-        self.do_or();
+        self.do_or(self.get_immediate());
     }
 
     pub fn or_absolute(&mut self) {
-        self.get_absolute();
-        self.do_or();
+        self.do_or(self.get_absolute());
     }
 
     #[inline]
-    pub fn do_or(&mut self) {
-
+    pub fn do_or(&mut self, data: u8) {
+        self.accumulator |= data;
+        *self.processor_status &= ((self.accumulator == 0) as u8 & *ProcessorStatusFlag::Zero) | (self.accumulator & *ProcessorStatusFlag::Negative);
     }
 
     pub fn noop(&mut self) {}
