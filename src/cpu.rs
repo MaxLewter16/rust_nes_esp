@@ -142,12 +142,12 @@ impl Index<u16> for Memory {
 
 impl Memory {
     fn write(&mut self, address: u16, data: u8) {
-        if address < 0x2000 { self.ram[address as usize] = data }
-        else if address < 0x4020 {self.mmio_write(address, data)}
-        else if address < 0x6000 {
+        if address < MMIO { self.ram[address as usize] = data }
+        else if address < EXPANSION_ROM {self.mmio_write(address, data)}
+        else if address < SRAM {
             //Expansion ROM
         }
-        else if address < 0x8000 {
+        else if address < PROGRAM_ROM {
             //SRAM
         }
         else {
@@ -265,7 +265,7 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
-    /// Fetches an indexed absolute address (Absolute,X or Absolute,Y) and returns the value stored at that address.
+    /// Fetches an indexed absolute address (Absolute,X or Absolute,Y)
     fn get_absolute_xy(&mut self, reg: Register) -> u16 {
         let base_addr = self.get_absolute();
         match reg {
@@ -378,7 +378,7 @@ mod tests {
         let mut instr = vec![0x09, 0xaa];
         for i in 0..1<<7 {
             instr.push(0x8d);
-            let a = (i * (0x2000 / (1<<7)) as u16).to_le_bytes();
+            let a = (i * (MMIO / (1<<7)) as u16).to_le_bytes();
             instr.push(a[0]);
             instr.push(a[1]);
         }
@@ -388,7 +388,7 @@ mod tests {
             cpu.advance();
         }
         for i in 0..1<<7 {
-            let a: u16 = i * (0x2000u16 / (1<<7));
+            let a: u16 = i * (MMIO / (1<<7));
             assert_eq!(cpu.memory[a], 0xaa);
         }
     }
