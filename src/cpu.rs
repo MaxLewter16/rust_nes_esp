@@ -145,6 +145,7 @@ impl Index<u16> for Memory {
     //         0x8000..=0xFFFF => &self.program[address],
     //         _ => panic!("Invalid memory access: {:#06X}", address),
     // }
+    }
 }
 
 impl Memory {
@@ -485,4 +486,3 @@ mod tests {
         //TODO need 'transfer' instructions to get nontrivial values in X/Y
     }
 }
-
