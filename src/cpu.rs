@@ -180,6 +180,28 @@ impl CPU {
         (high << 8) | low  // Combine into 16-bit address (little-endian)
     }
 
+    fn get_indexed_absolute(&mut self, reg: Register) -> u16 {
+        match reg {
+            Register::X => self.get_absolute() + self.idx_register_x as u16,
+            Register::Y => self.get_absolute() + self.idx_register_y as u16,
+        } 
+    }
+    fn get_absolute_indirect(&mut self) -> u16 {
+        let pointer = self.get_absolute();  // Fetch pointer address
+        let low = self.memory[pointer] as u16;
+        
+        // Handle 6502 page boundary bug
+        let high = if pointer & 0xFF == 0xFF {
+            self.memory[pointer & 0xFF00] as u16  // Wrap around to same page
+        } else {
+            self.memory[pointer + 1] as u16
+        };
+    
+        (high << 8) | low  // Combine into final 16-bit address
+    }
+
+    
+
     pub fn or_immediate(&mut self) {
         self.get_immediate();
         //do arithmetic 'or'
