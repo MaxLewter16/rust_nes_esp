@@ -6,6 +6,14 @@ use crate::opmap::OP_MAP;
 const STACK_RESET: u8 = 0xff;
 const STACK: u16 = 0x0100;
 
+// Memory Map constants
+// constants specify the start of named section
+pub const RAM: u16 = 0;
+pub const MMIO: u16 = 0x2000;
+pub const EXPANSION_ROM: u16 = 0x4020;
+pub const SRAM: u16 = 0x6000;
+pub const PROGRAM_ROM: u16 = 0x8000;
+
 struct Program {
     file: Box<[u8]>,
 }
@@ -13,7 +21,7 @@ struct Program {
 impl Index<u16> for Program {
     type Output = u8;
     fn index(&self, address: u16) -> &Self::Output {
-        &self.file[(address - 0x8000) as usize]
+        &self.file[(address - PROGRAM_ROM) as usize]
     }
 }
 
@@ -110,13 +118,13 @@ struct Memory {
 impl Index<u16> for Memory {
     type Output = u8;
     fn index(&self, address: u16) -> &Self::Output {
-        if address < 0x2000 { &self.ram[address as usize] }
-        else if address < 0x4020 {self.mmio(address)}
-        else if address < 0x6000 {
+        if address < MMIO { &self.ram[address as usize] }
+        else if address < EXPANSION_ROM {self.mmio(address)}
+        else if address < SRAM {
             //Expansion ROM
             &0u8
         }
-        else if address < 0x8000 {
+        else if address < PROGRAM_ROM {
             //SRAM
             &0u8
         }
@@ -128,8 +136,8 @@ impl Index<u16> for Memory {
 
 impl Memory {
     fn from_program(mut program: Vec<u8>) -> Self {
-        program.resize(0x10000-0x8000, 0);
-        Memory { program: Program{file: program.into_boxed_slice()}, ram: [0u8; 0x2000]}
+        program.resize(0x10000 - PROGRAM_ROM as usize, 0);
+        Memory { program: Program{file: program.into_boxed_slice()}, ram: [0u8; (MMIO - RAM) as usize]}
     }
 
     fn from_file(path: String) -> Self {
@@ -152,7 +160,7 @@ impl CPU {
     pub fn with_program(program: Vec<u8>) -> Self {
         CPU {
             memory: Memory::from_program(program),
-            program_counter: 0x8000,
+            program_counter: PROGRAM_ROM,
             stack_pointer: 0,
             accumulator: 0,
             idx_register_x: 0,
