@@ -100,15 +100,14 @@ pub struct CPU {
 
 struct Memory {
     program: Program,
-    mmio: MMIO,
     ram: [u8; 0x2000],
 }
 
 impl Index<u16> for Memory {
     type Output = u8;
     fn index(&self, address: u16) -> &Self::Output {
-        if address < 0x2000 { self.ram[address] }
-        else if address < 0x4020 {self.mmio.send_write(address)}
+        if address < 0x2000 { &self.ram[address as usize] }
+        else if address < 0x4020 {self.mmio(address)}
         else if address < 0x6000 {
             //Expansion ROM
             &0u8
@@ -129,9 +128,8 @@ impl Memory {
     }
 
     fn mmio(&self, address: u16) {
-        match address {
-            0x2000 => //PPU control register 1
-        }
+        //TODO
+        MMIO_MAP[address]();
     }
 }
 
@@ -192,7 +190,7 @@ impl CPU {
         tmp
     }
 
-    fn get_zero_page_indirect(&mut self, reg: Register) -> u8 {
+    fn get_zero_page_xy_indirect(&mut self, reg: Register) -> u8 {
         let address = match reg {
             Register::X => {
                 let indirect_address = self.memory[self.program_counter] + self.idx_register_x;
@@ -207,49 +205,90 @@ impl CPU {
         self.program_counter += 1;
         tmp
     }
+    /// Fetches an absolute address but does NOT return the value.
+    fn get_absolute_address(&mut self) -> u16 {
+        let low = self.memory[self.program_counter];
+        let high = self.memory[self.program_counter + 1];
 
-    fn get_absolute(&mut self) -> u16 {
-        let low = self.memory[self.program_counter] as u16;       // Fetch low byte
-        let high = self.memory[self.program_counter + 1] as u16;  // Fetch high byte
         self.program_counter += 2;
 
-        (high << 8) | low  // Combine into 16-bit address (little-endian)
+        u16::from_le_bytes([low, high])
     }
 
-    fn get_indexed_absolute(&mut self, reg: Register) -> u16 {
-        match reg {
-            Register::X => self.get_absolute() + self.idx_register_x as u16,
-            Register::Y => self.get_absolute() + self.idx_register_y as u16,
-        }
+    // Fetch the value at the absolute address
+    fn get_absolute(&mut self) -> u8 {
+        let address = self.get_absolute_address();
+        self.memory[address]
     }
-    fn get_absolute_indirect(&mut self) -> u16 {
-        let pointer = self.get_absolute();  // Fetch pointer address
-        let low = self.memory[pointer] as u16;
 
-        // Handle 6502 page boundary bug
-        let high = if pointer & 0xFF == 0xFF {
-            self.memory[pointer & 0xFF00] as u16  // Wrap around to same page
-        } else {
-            self.memory[pointer + 1] as u16
+    /// Fetches an indexed absolute address (Absolute,X or Absolute,Y) and returns the value stored at that address.
+    fn get_absolute_xy(&mut self, reg: Register) -> u8 {
+        let base_addr = self.get_absolute_address();
+        let indexed_addr = match reg {
+            Register::X => base_addr.wrapping_add(self.idx_register_x as u16),
+            Register::Y => base_addr.wrapping_add(self.idx_register_y as u16),
         };
 
-        (high << 8) | low  // Combine into final 16-bit address
+        self.memory[indexed_addr]
     }
 
+    /// Fetches an absolute indirect address value(used for JMP (indirect)).
+    fn get_absolute_indirect(&mut self) -> u8 {
+        let addr_ptr = self.get_absolute_address();
+        let low = self.memory[addr_ptr];
+        let high = self.memory[addr_ptr.wrapping_add(1)];
 
+        let target_addr = u16::from_le_bytes([low, high]);
+        self.memory[target_addr]
+    }
 
     pub fn or_immediate(&mut self) {
-        self.do_or(self.get_immediate());
+        let data = self.get_immediate();
+        self.do_or(data);
     }
 
     pub fn or_absolute(&mut self) {
-        self.do_or(self.get_absolute());
+        let data = self.get_absolute();
+        self.do_or(data);
+    }
+
+    pub fn or_absolute_x(&mut self) {
+        let data = self.get_absolute_xy(Register::X);
+        self.do_or(data);
+    }
+
+    pub fn or_absolute_y(&mut self) {
+        let data = self.get_absolute_xy(Register::Y);
+        self.do_or(data);
+    }
+
+    pub fn or_zero_page(&mut self) {
+        let data = self.get_zero_page();
+        self.do_or(data);
+    }
+
+    pub fn or_zero_page_x(&mut self) {
+        let data = self.get_zero_page_xy(Register::X);
+        self.do_or(data);
+    }
+
+    pub fn or_zero_page_x_indirect(&mut self) {
+        let data = self.get_zero_page_xy_indirect(Register::X);
+        self.do_or(data);
+    }
+
+    pub fn or_zero_page_y_indirect(&mut self) {
+        let data = self.get_zero_page_xy_indirect(Register::Y);
+        self.do_or(data);
     }
 
     #[inline]
     pub fn do_or(&mut self, data: u8) {
         self.accumulator |= data;
-        *self.processor_status &= ((self.accumulator == 0) as u8 & *ProcessorStatusFlag::Zero) | (self.accumulator & *ProcessorStatusFlag::Negative);
+        //clear relevant flags
+        *self.processor_status &= !(*ProcessorStatusFlag::Zero | *ProcessorStatusFlag::Negative);
+        //set flags
+        *self.processor_status |= (if self.accumulator == 0 {*ProcessorStatusFlag::Zero} else {0}) | (self.accumulator & *ProcessorStatusFlag::Negative);
     }
 
     pub fn noop(&mut self) {}
