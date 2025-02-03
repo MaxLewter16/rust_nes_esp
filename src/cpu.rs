@@ -128,7 +128,7 @@ impl Index<u16> for Memory {
 
 impl Memory {
     fn from_program(mut program: Vec<u8>) -> Self {
-        program.resize(0x10000-0x80000, 0);
+        program.resize(0x10000-0x8000, 0);
         Memory { program: Program{file: program.into_boxed_slice()}, ram: [0u8; 0x2000]}
     }
 
@@ -311,4 +311,15 @@ impl CPU {
     pub fn noop(&mut self) {}
 }
 
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_or() {
+        // or 0xaa into Accumulator
+        let mut cpu = CPU::with_program(vec![0x09, 0xaa]);
+        cpu.advance();
+        assert_eq!(cpu.accumulator, 0xaa);
+    }
+}
 
