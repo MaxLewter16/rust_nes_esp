@@ -283,6 +283,10 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
+    /*
+        store instruction
+     */
+
     pub fn store_a_absolute(&mut self) {
         let address = self.get_absolute();
         self.store(address, self.accumulator);
@@ -291,6 +295,10 @@ impl CPU {
     pub fn store(&mut self, address: u16, data: u8) {
         self.memory.write(address, data);
     }
+
+    /*
+        or instruction
+     */
 
     pub fn or_immediate(&mut self) {
         let address = self.get_immediate();
@@ -363,6 +371,26 @@ mod tests {
         assert_eq!(cpu.accumulator, 0xaa);
         assert_eq!(cpu.program_counter, 0x8002);
         assert_eq!(*cpu.processor_status, *ProcessorStatusFlag::Negative);
+    }
+
+    #[test]
+    fn test_simple_store_ram() {
+        let mut instr = vec![0x09, 0xaa];
+        for i in 0..1<<7 {
+            instr.push(0x8d);
+            let a = (i * (0x2000 / (1<<7)) as u16).to_le_bytes();
+            instr.push(a[0]);
+            instr.push(a[1]);
+        }
+        let len = instr.len();
+        let mut cpu = CPU::with_program(instr);
+        for _ in 0..len {
+            cpu.advance();
+        }
+        for i in 0..1<<7 {
+            let a: u16 = i * (0x2000u16 / (1<<7));
+            assert_eq!(cpu.memory[a], 0xaa);
+        }
     }
 }
 

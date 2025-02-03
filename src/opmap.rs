@@ -12,5 +12,9 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x15] = CPU::or_zero_page_x as fn(&mut CPU);
     map[0x01] = CPU::or_zero_page_x_indirect as fn(&mut CPU);
     map[0x11] = CPU::or_zero_page_y_indirect as fn(&mut CPU);
+
+    //'store' instructions
+    map[0x8d] = CPU::store_a_absolute as fn(&mut CPU);
+
     map
 };
