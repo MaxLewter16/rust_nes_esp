@@ -208,6 +208,14 @@ impl CPU {
     //     }
     // }
 
+    //execute 'steps' instructions if steps is Some, otherwise run until program terminates
+    pub fn execute(&mut self, steps: Option<usize>) {
+        if let Some(steps) = steps {
+            for _ in 0..steps {self.advance();}
+        }
+        else { loop {self.advance();} }
+    }
+
     fn advance(&mut self) {
         let i = OP_MAP[self.memory[self.program_counter] as usize];
         self.program_counter += 1;
@@ -452,6 +460,22 @@ mod tests {
             let a: u16 = i * (MMIO / (1<<7));
             assert_eq!(cpu.memory[a], 0xaa);
         }
+    }
+
+    #[test]
+    fn test_addressing() {
+        //! this test depends on 'or', 'store', and 'transfer' instructions
+        //test absolute
+        let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0x8d, 0xff, 0x10]);
+        cpu.execute(Some(2));
+        assert_eq!(cpu.memory[0x10ff], 0xaa);
+
+        //test zero page
+        let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0x85, 0xff]);
+        cpu.execute(Some(2));
+        assert_eq!(cpu.memory[0x00ff], 0xaa);
+
+        //TODO need 'transfer' instructions to get nontrivial values in X/Y
     }
 }
 
