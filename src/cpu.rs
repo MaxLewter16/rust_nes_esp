@@ -7,12 +7,13 @@ const STACK_RESET: u8 = 0xff;
 const STACK: u16 = 0x0100;
 
 struct Program {
-    file: Vec<u8>,
+    file: Box<[u8]>,
 }
 
-impl Program {
-    fn get(&self, location: u16) -> u8 {
-        self.file[(location - 0x8000) as usize]
+impl Index<u16> for Program {
+    type Output = u8;
+    fn index(&self, address: u16) -> &Self::Output {
+        &self.file[(address - 0x8000) as usize]
     }
 }
 
@@ -59,14 +60,17 @@ pub struct ProcessorStatus{
 }
 
 impl ProcessorStatus {
-    pub fn new() -> Self {
-        Self { flags: 0 }
-    }
     pub fn set(&mut self, flag: ProcessorStatusFlag) {
         self.flags |= flag as u8;
     }
     pub fn clear(&mut self, flag: ProcessorStatusFlag) {
         self.flags &= !(flag as u8);
+    }
+}
+
+impl Default for ProcessorStatus {
+    fn default() -> Self {
+        Self { flags: 0 }
     }
 }
 
@@ -117,19 +121,25 @@ impl Index<u16> for Memory {
             &0u8
         }
         else {
-            &self.program.get(address)
+            &self.program[address]
         }
     }
 }
 
 impl Memory {
-    fn from_file(path: String) -> Self {
-
+    fn from_program(mut program: Vec<u8>) -> Self {
+        program.resize(0x10000-0x80000, 0);
+        Memory { program: Program{file: program.into_boxed_slice()}, ram: [0u8; 0x2000]}
     }
 
-    fn mmio(&self, address: u16) {
+    fn from_file(path: String) -> Self {
+        unimplemented!()
+    }
+
+    fn mmio(&self, address: u16) -> &u8 {
         //TODO
-        MMIO_MAP[address]();
+        // MMIO_MAP[address]();
+        unimplemented!()
     }
 }
 
@@ -139,27 +149,34 @@ enum Register {
 }
 
 impl CPU {
-    pub fn new() -> Self {
+    pub fn with_program(program: Vec<u8>) -> Self {
         CPU {
-            memory: Memory::from_file(""),
-            program_counter: 0,
+            memory: Memory::from_program(program),
+            program_counter: 0x8000,
+            stack_pointer: 0,
+            accumulator: 0,
             idx_register_x: 0,
             idx_register_y: 0,
-            processor_status: ProcessorStatus::new(),
-            stack_pointer: STACK_RESET,
-            accumulator: 0
+            processor_status: ProcessorStatus::default(),
         }
     }
+
+    // pub fn new() -> Self {
+    //     CPU {
+    //         memory: Memory::from_file(""),
+    //         program_counter: 0,
+    //         idx_register_x: 0,
+    //         idx_register_y: 0,
+    //         processor_status: ProcessorStatus::new(),
+    //         stack_pointer: STACK_RESET,
+    //         accumulator: 0
+    //     }
+    // }
 
     fn advance(&mut self) {
         let i = OP_MAP[self.memory[self.program_counter] as usize];
         self.program_counter += 1;
         i(self);
-    }
-
-    // named breaki because 'break' is a keyword in rust
-    fn breaki(&mut self) {
-        //execute break instruction
     }
 
     fn get_immediate(&mut self) -> u8 {
