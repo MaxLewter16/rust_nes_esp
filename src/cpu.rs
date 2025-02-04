@@ -1,4 +1,5 @@
 use std::{io::Write, ops::{Deref, DerefMut, Index, IndexMut}};
+use bitflags::bitflags;
 
 use crate::opmap::OP_MAP;
 
@@ -31,80 +32,20 @@ impl IndexMut<u16> for Program {
     }
 }
 
-#[repr(u8)]
-pub enum ProcessorStatusFlag{
-    ///  7 6 5 4 3 2 1 0
-    ///  N V _ B D I Z C
-    ///  | |   | | | | +--- Carry Flag
-    ///  | |   | | | +----- Zero Flag
-    ///  | |   | | +------- Interrupt Disable
-    ///  | |   | +--------- Decimal Mode (not used on NES)
-    ///  | |   +----------- Break Command
-    ///  | +--------------- Overflow Flag
-    ///  +----------------- Negative Flag
-    Carry = 1,
-    Zero = 1 << 1,
-    Interrupt = 1 << 2,
-    Decimal = 1 << 3,
-    Break = 1 << 4,
-    Overflow = 1 << 6,
-    Negative = 1 << 7
-}
-
-impl Deref for ProcessorStatusFlag {
-    type Target = u8;
-
-    fn deref(&self) -> &Self::Target {
-        // safe because of primitive representation
-        // see: https://doc.rust-lang.org/reference/items/enumerations.html
-        unsafe { &*(self as *const Self as *const u8) }
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ProcessorStatusFlags: u8 {
+        const CARRY     = 1 << 0;
+        const ZERO      = 1 << 1;
+        const INTERRUPT = 1 << 2;  // IRQ disabled
+        const DECIMAL   = 1 << 3;  // Not used on NES
+        const BREAK     = 1 << 4;
+        const UNUSED    = 1 << 5;  // Always set on NES
+        const OVERFLOW  = 1 << 6;
+        const NEGATIVE  = 1 << 7;
     }
 }
 
-impl DerefMut for ProcessorStatusFlag {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // safe because of primitive representation
-        // see: https://doc.rust-lang.org/reference/items/enumerations.html
-        unsafe { &mut *(self as *mut Self as *mut u8) }
-    }
-}
-
-pub struct ProcessorStatus{
-    pub flags: u8
-}
-
-impl ProcessorStatus {
-    pub fn set(&mut self, flag: ProcessorStatusFlag) {
-        self.flags |= flag as u8;
-    }
-    pub fn clear(&mut self, flag: ProcessorStatusFlag) {
-        self.flags &= !(flag as u8);
-    }
-}
-
-impl Default for ProcessorStatus {
-    fn default() -> Self {
-        Self { flags: 0 }
-    }
-}
-
-impl Deref for ProcessorStatus {
-    type Target = u8;
-
-    fn deref(&self) -> &Self::Target {
-        // safe because of primitive representation
-        // see: https://doc.rust-lang.org/reference/items/enumerations.html
-        unsafe { &*(self as *const Self as *const u8) }
-    }
-}
-
-impl DerefMut for ProcessorStatus {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        // safe because of primitive representation
-        // see: https://doc.rust-lang.org/reference/items/enumerations.html
-        unsafe { &mut *(self as *mut Self as *mut u8) }
-    }
-}
 
 pub struct CPU {
     pub memory: Memory,
@@ -113,7 +54,7 @@ pub struct CPU {
     pub accumulator: u8,
     pub idx_register_x: u8,
     pub idx_register_y: u8,
-    pub processor_status: ProcessorStatus,
+    pub processor_status: ProcessorStatusFlags,
 }
 
 struct Memory {
@@ -199,7 +140,7 @@ impl CPU {
             accumulator: 0,
             idx_register_x: 0,
             idx_register_y: 0,
-            processor_status: ProcessorStatus::default(),
+            processor_status: ProcessorStatusFlags::from_bits_truncate(0b000000),
         }
     }
 
@@ -429,9 +370,22 @@ impl CPU {
     pub fn or(&mut self, data: u8) {
         self.accumulator |= data;
         //clear relevant flags
-        *self.processor_status &= !(*ProcessorStatusFlag::Zero | *ProcessorStatusFlag::Negative);
+        self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
         //set flags
-        *self.processor_status |= (if self.accumulator == 0 {*ProcessorStatusFlag::Zero} else {0}) | (self.accumulator & *ProcessorStatusFlag::Negative);
+        self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+    }
+
+    /*
+        and instruction
+    */
+
+    #[inline]
+    pub fn and(&mut self, data: u8) {
+        self.accumulator &= data;
+        //clear relevant flags
+        self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
+        //set flags
+        self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
 
     pub fn noop(&mut self) {}
@@ -447,7 +401,7 @@ mod tests {
         cpu.advance();
         assert_eq!(cpu.accumulator, 0xaa);
         assert_eq!(cpu.program_counter, 0x8002);
-        assert_eq!(*cpu.processor_status, *ProcessorStatusFlag::Negative);
+        assert_eq!(cpu.processor_status, ProcessorStatusFlags::NEGATIVE);
     }
 
     #[test]
