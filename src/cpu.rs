@@ -37,7 +37,7 @@ bitflags! {
     pub struct ProcessorStatusFlags: u8 {
         const CARRY     = 1 << 0;
         const ZERO      = 1 << 1;
-        const INTERRUPT = 1 << 2;  // IRQ disabled
+        const INTERRUPT = 1 << 2;  
         const DECIMAL   = 1 << 3;  // Not used on NES
         const BREAK     = 1 << 4;
         const UNUSED    = 1 << 5;  // Always set on NES
@@ -378,7 +378,53 @@ impl CPU {
     /*
         and instruction
     */
+    pub fn and_immediate(&mut self) {
+        let address = self.get_immediate();
+        let data = self.memory[address];
+        self.and(data);
+    }
 
+    pub fn and_absolute(&mut self) {
+        let address = self.get_absolute();
+        let data = self.memory[address];
+        self.and(data);
+    }
+
+    pub fn and_absolute_x(&mut self) {
+        let address = self.get_absolute_xy(Register::X);
+        let data = self.memory[address];
+        self.and(data);
+    }
+
+    pub fn and_absolute_y(&mut self) {
+        let address = self.get_absolute_xy(Register::Y);
+        let data = self.memory[address];
+        self.and(data);
+    }
+
+    pub fn and_zero_page(&mut self) {
+        let address = self.get_zero_page();
+        let data = self.memory[address];
+        self.and(data);
+    }
+
+    pub fn and_zero_page_x(&mut self) {
+        let address = self.get_zero_page_xy(Register::X);
+        let data = self.memory[address];
+        self.and(data);
+    }
+
+    pub fn and_zero_page_x_indirect(&mut self) {
+        let address = self.get_zero_page_xy_indirect(Register::X);
+        let data = self.memory[address];
+        self.and(data);
+    }
+
+    pub fn and_zero_page_y_indirect(&mut self) {
+        let address = self.get_zero_page_xy_indirect(Register::Y);
+        let data = self.memory[address];
+        self.and(data);
+    }
     #[inline]
     pub fn and(&mut self, data: u8) {
         self.accumulator &= data;
@@ -387,6 +433,8 @@ impl CPU {
         //set flags
         self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
+
+    
 
     pub fn noop(&mut self) {}
 }
