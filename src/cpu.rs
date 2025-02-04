@@ -183,33 +183,31 @@ impl CPU {
         self.memory[pc] as u16
     }
 
-    fn get_zero_page_xy(&mut self, reg: Register) -> u16 {
+    fn get_zero_page_x(&mut self) ->u16{
         let pc = self.program_counter;
         // assume upper address byte is 0
         self.program_counter += 1;
-        match reg {
-            Register::X => {
-                (self.memory[pc] + self.idx_register_x) as u16
-            },
-            Register::Y => {
-                (self.memory[pc] + self.idx_register_y) as u16
-            }
-        }
+        (self.memory[pc] + self.idx_register_x) as u16
+    }
+    fn get_zero_page_y(&mut self) ->u16{
+        let pc = self.program_counter;
+        // assume upper address byte is 0
+        self.program_counter += 1;
+        (self.memory[pc] + self.idx_register_y) as u16
     }
 
-    fn get_zero_page_xy_indirect(&mut self, reg: Register) -> u16 {
+    fn get_zero_page_x_indirect(&mut self) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
-        match reg {
-            Register::X => {
-                let indirect_address = self.memory[pc] + self.idx_register_x;
-                u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]])
-            },
-            Register::Y => {
-                let indirect_address = self.memory[pc];
-                u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]]) + self.idx_register_y as u16
-            }
-        }
+        let indirect_address = self.memory[pc] + self.idx_register_x;
+        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]])
+    }
+
+    fn get_zero_page_y_indirect(&mut self) -> u16 {
+        let pc = self.program_counter;
+        self.program_counter += 1;
+        let indirect_address = self.memory[pc] + self.idx_register_y;
+        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]])
     }
 
     /// Fetches an absolute address but does NOT return the value.
@@ -222,13 +220,13 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
-    /// Fetches an indexed absolute address (Absolute,X or Absolute,Y)
-    fn get_absolute_xy(&mut self, reg: Register) -> u16 {
+    fn get_absolute_x(&mut self) -> u16 {
         let base_addr = self.get_absolute();
-        match reg {
-            Register::X => base_addr.wrapping_add(self.idx_register_x as u16),
-            Register::Y => base_addr.wrapping_add(self.idx_register_y as u16),
-        }
+        base_addr.wrapping_add(self.idx_register_x as u16)
+    }
+    fn get_absolute_y(&mut self) -> u16 {
+        let base_addr = self.get_absolute();
+        base_addr.wrapping_add(self.idx_register_x as u16)
     }
 
     /// Fetches an absolute indirect address value(used for JMP (indirect)).
@@ -240,130 +238,9 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
-    /*
-        store instruction
-     */
-
-    pub fn store_a_absolute(&mut self) {
-        let address = self.get_absolute();
-        self.store(address, self.accumulator);
-    }
-
-    pub fn store_a_absolute_x(&mut self) {
-        let address = self.get_absolute_xy(Register::X);
-        self.store(address, self.accumulator);
-    }
-
-    pub fn store_a_absolute_y(&mut self) {
-        let address = self.get_absolute_xy(Register::Y);
-        self.store(address, self.accumulator);
-    }
-
-    pub fn store_a_zero_page(&mut self) {
-        let address = self.get_zero_page();
-        self.store(address, self.accumulator);
-    }
-
-    pub fn store_a_zero_page_x(&mut self) {
-        let address = self.get_zero_page_xy(Register::X);
-        self.store(address, self.accumulator);
-    }
-
-    pub fn store_a_zero_page_x_indirect(&mut self) {
-        let address = self.get_zero_page_xy_indirect(Register::X);
-        self.store(address, self.accumulator);
-    }
-
-    pub fn store_a_zero_page_y_indirect(&mut self) {
-        let address = self.get_zero_page_xy_indirect(Register::Y);
-        self.store(address, self.accumulator);
-    }
-
-    pub fn store_x_absolute(&mut self) {
-        let address = self.get_absolute();
-        self.store(address, self.idx_register_x);
-    }
-
-    pub fn store_x_zero_page(&mut self) {
-        let address = self.get_zero_page();
-        self.store(address, self.idx_register_x);
-    }
-
-    pub fn store_x_zero_page_y(&mut self) {
-        let address = self.get_zero_page_xy(Register::Y);
-        self.store(address, self.idx_register_x);
-    }
-
-    pub fn store_y_absolute(&mut self) {
-        let address = self.get_absolute();
-        self.store(address, self.idx_register_y);
-    }
-
-    pub fn store_y_zero_page(&mut self) {
-        let address = self.get_zero_page();
-        self.store(address, self.idx_register_y);
-    }
-
-    pub fn store_y_zero_page_x(&mut self) {
-        let address = self.get_zero_page_xy(Register::X);
-        self.store(address, self.idx_register_y);
-    }
-
-    #[inline]
+    #[inline(always)]
     pub fn store(&mut self, address: u16, data: u8) {
         self.memory.write(address, data);
-    }
-
-    /*
-        or instruction
-     */
-
-    pub fn or_immediate(&mut self) {
-        let address = self.get_immediate();
-        let data = self.memory[address];
-        self.or(data);
-    }
-
-    pub fn or_absolute(&mut self) {
-        let address = self.get_absolute();
-        let data = self.memory[address];
-        self.or(data);
-    }
-
-    pub fn or_absolute_x(&mut self) {
-        let address = self.get_absolute_xy(Register::X);
-        let data = self.memory[address];
-        self.or(data);
-    }
-
-    pub fn or_absolute_y(&mut self) {
-        let address = self.get_absolute_xy(Register::Y);
-        let data = self.memory[address];
-        self.or(data);
-    }
-
-    pub fn or_zero_page(&mut self) {
-        let address = self.get_zero_page();
-        let data = self.memory[address];
-        self.or(data);
-    }
-
-    pub fn or_zero_page_x(&mut self) {
-        let address = self.get_zero_page_xy(Register::X);
-        let data = self.memory[address];
-        self.or(data);
-    }
-
-    pub fn or_zero_page_x_indirect(&mut self) {
-        let address = self.get_zero_page_xy_indirect(Register::X);
-        let data = self.memory[address];
-        self.or(data);
-    }
-
-    pub fn or_zero_page_y_indirect(&mut self) {
-        let address = self.get_zero_page_xy_indirect(Register::Y);
-        let data = self.memory[address];
-        self.or(data);
     }
 
     #[inline]
@@ -374,57 +251,6 @@ impl CPU {
         //set flags
         self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
-
-    /*
-        and instruction
-    */
-    pub fn and_immediate(&mut self) {
-        let address = self.get_immediate();
-        let data = self.memory[address];
-        self.and(data);
-    }
-
-    pub fn and_absolute(&mut self) {
-        let address = self.get_absolute();
-        let data = self.memory[address];
-        self.and(data);
-    }
-
-    pub fn and_absolute_x(&mut self) {
-        let address = self.get_absolute_xy(Register::X);
-        let data = self.memory[address];
-        self.and(data);
-    }
-
-    pub fn and_absolute_y(&mut self) {
-        let address = self.get_absolute_xy(Register::Y);
-        let data = self.memory[address];
-        self.and(data);
-    }
-
-    pub fn and_zero_page(&mut self) {
-        let address = self.get_zero_page();
-        let data = self.memory[address];
-        self.and(data);
-    }
-
-    pub fn and_zero_page_x(&mut self) {
-        let address = self.get_zero_page_xy(Register::X);
-        let data = self.memory[address];
-        self.and(data);
-    }
-
-    pub fn and_zero_page_x_indirect(&mut self) {
-        let address = self.get_zero_page_xy_indirect(Register::X);
-        let data = self.memory[address];
-        self.and(data);
-    }
-
-    pub fn and_zero_page_y_indirect(&mut self) {
-        let address = self.get_zero_page_xy_indirect(Register::Y);
-        let data = self.memory[address];
-        self.and(data);
-    }
     #[inline]
     pub fn and(&mut self, data: u8) {
         self.accumulator &= data;
@@ -434,11 +260,70 @@ impl CPU {
         self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
 
-    
-
     pub fn noop(&mut self) {}
+
+}
+/*
+    store instructions
+*/
+macro_rules! store_gen {
+    ($name: ident, $p: path, $register:ident) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = $p(self);
+                self.memory.write(address, self.$register)
+            }
+        }
+    };
 }
 
+// store for accumulator
+store_gen!(store_a_absolute, CPU::get_absolute, accumulator);
+store_gen!(store_a_absolute_x, CPU::get_absolute_x, accumulator);
+store_gen!(store_a_absolute_y, CPU::get_absolute_y, accumulator);
+store_gen!(store_a_zero_page, CPU::get_zero_page, accumulator);
+store_gen!(store_a_zero_page_x, CPU::get_zero_page_x, accumulator);
+store_gen!(store_a_zero_page_y, CPU::get_zero_page_y, accumulator);
+store_gen!(store_a_zero_page_x_indirect, CPU::get_zero_page_x_indirect, accumulator);
+store_gen!(store_a_zero_page_y_indirect, CPU::get_zero_page_y_indirect, accumulator);
+
+// store for reg x
+store_gen!(store_x_absolute, CPU::get_absolute, idx_register_x);
+store_gen!(store_x_zero_page, CPU::get_zero_page, idx_register_x);
+store_gen!(store_x_zero_page_y, CPU::get_zero_page_y, idx_register_x);
+
+// store for reg y
+store_gen!(store_y_absolute, CPU::get_absolute, idx_register_y);
+store_gen!(store_y_zero_page, CPU::get_zero_page, idx_register_y);
+store_gen!(store_y_zero_page_x, CPU::get_zero_page_x, idx_register_y);
+
+/*
+    or instructions
+*/
+
+macro_rules! or_gen {
+    ($name: ident, $p: path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = $p(self);
+                let data = self.memory[address];
+                self.accumulator |= data;
+                //clear relevant flags
+                self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
+                //set flags
+                self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+            }
+        }
+    };
+}
+or_gen!(or_immediate, CPU::get_immediate);
+or_gen!(or_absolute, CPU::get_absolute);
+or_gen!(or_absolute_x, CPU::get_absolute_x);
+or_gen!(or_absolute_y, CPU::get_absolute_y);
+or_gen!(or_zero_page, CPU::get_zero_page);
+or_gen!(or_zero_page_x, CPU::get_zero_page_x);
+or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
+or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 mod tests {
     use super::*;
 
