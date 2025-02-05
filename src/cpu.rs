@@ -221,8 +221,15 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
-    pub fn noop(&mut self) {
-        self.program_counter += 1;
+    pub fn noop(&mut self) {}
+
+    pub fn transfer_a_x(&mut self) {
+        self.idx_register_x = self.accumulator;
+        self.processor_status &= !(ProcessorStatusFlags::NEGATIVE | ProcessorStatusFlags::ZERO);
+        self.processor_status |=
+            ProcessorStatusFlags::from_bits(
+                (if self.accumulator == 0 {ProcessorStatusFlags::ZERO.bits()} else {0}) |
+                (self.accumulator & ProcessorStatusFlags::NEGATIVE.bits())).unwrap();
     }
 
 }
@@ -273,7 +280,9 @@ macro_rules! or_gen {
                 //clear relevant flags
                 self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
                 //set flags
-                self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+                self.processor_status |=
+                    (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
+                    (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
             }
         }
     };

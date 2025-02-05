@@ -32,5 +32,8 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x84] = CPU::store_y_zero_page;
     map[0x94] = CPU::store_y_zero_page_x;
 
+    //'transfer' instructions
+    map[0xaa] = CPU::transfer_a_x;
+
     map
 };
