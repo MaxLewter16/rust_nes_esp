@@ -1,4 +1,4 @@
-use std::{io::Write, ops::{Deref, DerefMut, Index, IndexMut}};
+use std::{io::Write, ops::{Deref, DerefMut, Index, IndexMut}, u16};
 use bitflags::bitflags;
 
 use crate::opmap::OP_MAP;
@@ -37,7 +37,7 @@ bitflags! {
     pub struct ProcessorStatusFlags: u8 {
         const CARRY     = 1 << 0;
         const ZERO      = 1 << 1;
-        const INTERRUPT = 1 << 2;  
+        const INTERRUPT = 1 << 2;
         const DECIMAL   = 1 << 3;  // Not used on NES
         const BREAK     = 1 << 4;
         const UNUSED    = 1 << 5;  // Always set on NES
@@ -65,42 +65,24 @@ struct Memory {
 impl Index<u16> for Memory {
     type Output = u8;
     fn index(&self, address: u16) -> &Self::Output {
-        if address < MMIO { &self.ram[address as usize] }
-        else if address < EXPANSION_ROM {self.mmio(address)}
-        else if address < SRAM {
-            //Expansion ROM
-            &0u8
+        match address {
+            RAM..MMIO => &self.ram[(address % 0x0800) as usize], // Mirror every 2 KB
+            MMIO..EXPANSION_ROM => self.mmio(address % 8), // Mirrors every 8 bytes
+            EXPANSION_ROM..SRAM => &0u8, //EXPANSION_ROM
+            SRAM..PROGRAM_ROM => &0u8, // SRAM (not yet implemented)
+            PROGRAM_ROM..=u16::MAX => &self.program[address],
         }
-        else if address < PROGRAM_ROM {
-            //SRAM
-            &0u8
-        }
-        else {
-            &self.program[address]
-        }
-    //      Possible refactor, memory needs to be mirrored and this handles out of bounds address
-    //     match address {
-    //         0x0000..=0x1FFF => &self.ram[(address % 0x0800) as usize], // Mirror every 2 KB
-    //         0x2000..=0x3FFF => self.mmio(0x2000 + (address % 8)), // Mirrors every 8 bytes
-    //         0x6000..=0x7FFF => &0u8,  // SRAM (not yet implemented)
-    //         0x8000..=0xFFFF => &self.program[address],
-    //         _ => panic!("Invalid memory access: {:#06X}", address),
-    // }
     }
 }
 
 impl Memory {
     fn write(&mut self, address: u16, data: u8) {
-        if address < MMIO { self.ram[address as usize] = data }
-        else if address < EXPANSION_ROM {self.mmio_write(address, data)}
-        else if address < SRAM {
-            //Expansion ROM
-        }
-        else if address < PROGRAM_ROM {
-            //SRAM
-        }
-        else {
-            self.program[address] = data
+        match address {
+            RAM..MMIO => self.ram[(address % 0x0800) as usize] = data, // Mirror every 2 KB
+            MMIO..EXPANSION_ROM => self.mmio_write(address % 8, data), // Mirrors every 8 bytes
+            EXPANSION_ROM..SRAM => (), //EXPANSION_ROM
+            SRAM..PROGRAM_ROM => (), // SRAM (not yet implemented)
+            PROGRAM_ROM..=u16::MAX => self.program[address] = data,
         }
     }
 
@@ -324,6 +306,8 @@ or_gen!(or_zero_page, CPU::get_zero_page);
 or_gen!(or_zero_page_x, CPU::get_zero_page_x);
 or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+
+
 mod tests {
     use super::*;
 
