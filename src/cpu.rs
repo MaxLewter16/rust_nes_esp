@@ -242,9 +242,12 @@ impl CPU {
         self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
 
-    pub fn noop(&mut self) {}
+    pub fn noop(&mut self) {
+        self.program_counter += 1;
+    }
 
 }
+
 /*
     store instructions
 */
@@ -258,7 +261,6 @@ macro_rules! store_gen {
         }
     };
 }
-
 // store for accumulator
 store_gen!(store_a_absolute, CPU::get_absolute, accumulator);
 store_gen!(store_a_absolute_x, CPU::get_absolute_x, accumulator);
@@ -282,7 +284,6 @@ store_gen!(store_y_zero_page_x, CPU::get_zero_page_x, idx_register_y);
 /*
     or instructions
 */
-
 macro_rules! or_gen {
     ($name: ident, $p: path) => {
         impl CPU {
