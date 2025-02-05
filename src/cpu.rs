@@ -46,7 +46,6 @@ bitflags! {
     }
 }
 
-
 pub struct CPU {
     pub memory: Memory,
     pub program_counter: u16,
@@ -171,6 +170,7 @@ impl CPU {
         self.program_counter += 1;
         (self.memory[pc] + self.idx_register_x) as u16
     }
+
     fn get_zero_page_y(&mut self) ->u16{
         let pc = self.program_counter;
         // assume upper address byte is 0
@@ -188,8 +188,8 @@ impl CPU {
     fn get_zero_page_y_indirect(&mut self) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
-        let indirect_address = self.memory[pc] + self.idx_register_y;
-        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]])
+        let indirect_address = self.memory[pc];
+        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]]) + self.idx_register_y as u16
     }
 
     /// Fetches an absolute address but does NOT return the value.
@@ -206,6 +206,7 @@ impl CPU {
         let base_addr = self.get_absolute();
         base_addr.wrapping_add(self.idx_register_x as u16)
     }
+
     fn get_absolute_y(&mut self) -> u16 {
         let base_addr = self.get_absolute();
         base_addr.wrapping_add(self.idx_register_x as u16)
@@ -218,28 +219,6 @@ impl CPU {
         let high = self.memory[addr_ptr.wrapping_add(1)];
 
         u16::from_le_bytes([low, high])
-    }
-
-    #[inline(always)]
-    pub fn store(&mut self, address: u16, data: u8) {
-        self.memory.write(address, data);
-    }
-
-    #[inline]
-    pub fn or(&mut self, data: u8) {
-        self.accumulator |= data;
-        //clear relevant flags
-        self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
-        //set flags
-        self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
-    }
-    #[inline]
-    pub fn and(&mut self, data: u8) {
-        self.accumulator &= data;
-        //clear relevant flags
-        self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
-        //set flags
-        self.processor_status |= (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) | (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
 
     pub fn noop(&mut self) {
