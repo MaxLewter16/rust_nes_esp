@@ -72,5 +72,15 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0xa4] = CPU::load_y_zero_page;
     map[0xb4] = CPU::load_y_zero_page_x;
 
+    //'branch' instructions
+    map[0xb0] = CPU::branch_on_carry_set;
+    map[0xf0] = CPU::branch_on_zero_set;
+    map[0x30] = CPU::branch_on_negative_set;
+    map[0x70] = CPU::branch_on_overflow_set;
+    map[0x90] = CPU::branch_on_carry_reset;
+    map[0xd0] = CPU::branch_on_zero_reset;
+    map[0x10] = CPU::branch_on_negative_reset;
+    map[0x50] = CPU::branch_on_overflow_reset;
+
     map
 };

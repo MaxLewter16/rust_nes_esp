@@ -221,6 +221,13 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
+    fn get_relative(&mut self) -> u16 {
+        let offset = (self.memory[self.program_counter] as i8) as i16;
+        self.program_counter += 1;
+        //? should it be allowed to branch outside of program memory
+        self.program_counter.wrapping_add(offset as u16)
+    }
+
     pub fn noop(&mut self) {}
 
     pub fn transfer_x_sp(&mut self) {
@@ -301,6 +308,31 @@ load_gen!(load_y_absolute, get_absolute, idx_register_y);
 load_gen!(load_y_absolute_x, get_absolute_x, idx_register_y);
 load_gen!(load_y_zero_page, get_zero_page, idx_register_y);
 load_gen!(load_y_zero_page_x, get_zero_page_x, idx_register_y);
+
+/*
+    branch instructions
+*/
+macro_rules! branch_gen {
+    ($name: ident, $inverse_name: ident, $flag: expr) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                if self.processor_status.contains($flag) {
+                    self.program_counter = self.get_relative();
+                }
+            }
+
+            pub fn $inverse_name(&mut self) {
+                if !self.processor_status.contains($flag) {
+                    self.program_counter = self.get_relative();
+                }
+            }
+        }
+    };
+}
+branch_gen!(branch_on_zero_set, branch_on_zero_reset, ProcessorStatusFlags::ZERO);
+branch_gen!(branch_on_carry_set, branch_on_carry_reset, ProcessorStatusFlags::CARRY);
+branch_gen!(branch_on_negative_set, branch_on_negative_reset, ProcessorStatusFlags::NEGATIVE);
+branch_gen!(branch_on_overflow_set, branch_on_overflow_reset, ProcessorStatusFlags::OVERFLOW);
 
 /*
     store instructions
@@ -540,6 +572,25 @@ mod tests {
         let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0x85, 0xc0, 0xa0, 0x0c, 0x91, 0xc0 ]);
         cpu.execute(Some(4));
         assert!(cpu.memory[0xb6] == 0xaa);
+
+        //test relative, use branch on carry reset
+        //branch forward by maximum offset 3 times, branch back by max offset 3 times
+        let mut instr: Vec<u8> = Vec::new();
+        let mut address = 0;
+        instr.resize(0x200, 0);
+        instr[0x0..0x2].copy_from_slice(&[0x90, 0x7f]);
+        address += 0x7f + 0x2;
+        instr[address..address + 0x4].copy_from_slice(&[0x09, 0x01, 0x90, 0x7f]);
+        address += 0x7f + 0x4;
+        instr[address..address + 0xd].copy_from_slice(&[0x09, 0x02, 0x90, 0x07, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x90, 0x80]);
+        address = address + 0xd - 0x80;
+        instr[address..address + 0x4].copy_from_slice(&[0x09, 0x04, 0x90, 0x80]);
+        address = address + 0x4 - 0x80;
+        instr[address..address + 0x4].copy_from_slice(&[0x09, 0x08, 0x90, 0x80]);
+        let mut cpu = CPU::with_program(instr);
+        cpu.execute(Some(9));
+        assert_eq!(cpu.accumulator, 0x0f);
+
 
 
         //TODO need 'transfer' instructions to get nontrivial values in X/Y
