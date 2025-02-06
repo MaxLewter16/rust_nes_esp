@@ -225,10 +225,43 @@ impl CPU {
 
     pub fn transfer_a_x(&mut self) {
         self.idx_register_x = self.accumulator;
-        self.processor_status &= !(ProcessorStatusFlags::NEGATIVE | ProcessorStatusFlags::ZERO);
-        self.processor_status |=
-            (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
-            (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+        self.update_negative_zero_flags(self.idx_register_x);
+    }
+
+    pub fn transfer_a_y(&mut self) {
+        self.idx_register_y = self.accumulator;
+        self.update_negative_zero_flags(self.idx_register_y);
+    }
+
+    pub fn transfer_sp_x(&mut self) {
+        self.idx_register_x = self.stack_pointer;
+        self.update_negative_zero_flags(self.idx_register_x);
+    }
+
+    pub fn transfer_x_a(&mut self) {
+        self.accumulator = self.idx_register_x;
+        self.update_negative_zero_flags(self.accumulator);
+    }
+
+    pub fn transfer_x_sp(&mut self) {
+        self.stack_pointer = self.idx_register_x;
+    }
+
+    pub fn transfer_y_a(&mut self) {
+        self.accumulator = self.idx_register_y;
+        self.update_negative_zero_flags(self.accumulator);
+    }
+
+    #[inline]
+    // set NEGATIVE flag if 'test' is negative, reset otherwise
+    // set ZERO flag if 'test' is zero, reset otherwise
+    pub fn update_negative_zero_flags(&mut self, test: u8) {
+         //clear relevant flags
+         self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
+         //set flags
+         self.processor_status |=
+             (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
+             (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
 
 }
@@ -276,12 +309,7 @@ macro_rules! or_gen {
                 let address = $p(self);
                 let data = self.memory[address];
                 self.accumulator |= data;
-                //clear relevant flags
-                self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
-                //set flags
-                self.processor_status |=
-                    (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
-                    (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+                self.update_negative_zero_flags(self.accumulator);
             }
         }
     };

@@ -34,6 +34,12 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
 
     //'transfer' instructions
     map[0xaa] = CPU::transfer_a_x;
+    map[0x8a] = CPU::transfer_x_a;
+    map[0xa8] = CPU::transfer_a_y;
+    map[0x98] = CPU::transfer_y_a;
+    map[0xba] = CPU::transfer_sp_x;
+    map[0x9a] = CPU::transfer_x_sp;
+
 
     map
 };
