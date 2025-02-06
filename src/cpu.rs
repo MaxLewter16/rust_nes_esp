@@ -388,6 +388,7 @@ mod tests {
     use super::*;
 
     #[test]
+    // tests or, lda, ldx, ldy
     fn test_baseline() {
         // or 0xaa into Accumulator
         let mut cpu = CPU::with_program(vec![0x09, 0xaa]);
@@ -402,7 +403,7 @@ mod tests {
         assert_eq!(cpu.idx_register_x, 0xbb);
         assert_eq!(cpu.idx_register_y, 0xbb);
     }
-    
+
     #[test]
     fn test_simple_and() {
         let mut cpu = CPU::with_program(vec![0x29, 0xaa]);
@@ -411,6 +412,7 @@ mod tests {
         assert_eq!(cpu.program_counter, 0x8002);
         assert_eq!(cpu.processor_status, ProcessorStatusFlags::ZERO); // Fix: Expect ZERO, not NEGATIVE
     }
+
     #[test]
     fn test_simple_and_neg() {
         let mut cpu = CPU::with_program(vec![0xA9, 0xFF, 0x29, 0xAA]); // LDA #0xFF, AND #0xAA
@@ -483,7 +485,51 @@ mod tests {
         //test zero page x
         let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa2, 0xf0, 0x95, 0x0f, 0xa9, 0x00, 0xb5, 0x0f]);
         cpu.execute(Some(5));
+        assert!(cpu.memory[0xff] == 0xaa);
         assert_eq!(cpu.accumulator, 0xaa);
+
+        //test zero page y
+        //lda 0xaa
+        //ldx 0xf0
+        //str 0xf(x)
+        //ldy 0xf0
+        //ld  0xf(y)
+        let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa2, 0xf0, 0x95, 0x0f, 0xa0, 0xf0, 0xb6, 0x0f]);
+        cpu.execute(Some(5));
+        assert!(cpu.memory[0xff] == 0xaa);
+        assert_eq!(cpu.idx_register_x, 0xaa);
+
+        //test absolute y
+        /*
+        lda #$aa
+        ldy #$ff
+        sta $1001, y
+         */
+        let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa0, 0xff, 0x99, 0x01, 0x10]);
+        cpu.execute(Some(3));
+        assert!(cpu.memory[0x1100] == 0xaa);
+
+        //test absolute x
+        /*
+        lda #$aa
+        ldx #$ff
+        sta $1001, x
+        */
+        let mut cpu = CPU::with_program(vec![0xa9,0xaa,0xa2,0xff,0x9d,0x01,0x10]);
+        cpu.execute(Some(3));
+        assert!(cpu.memory[0x1100] == 0xaa);
+
+        //test zero-page x indirect
+        /*
+        lda #$aa
+        sta $cc
+        ldx #$0c
+        sta ($c0, x)
+         */
+        let mut cpu = CPU::with_program(vec![ 0xa9, 0xaa, 0x85, 0xcc, 0xa2, 0x0c, 0x81, 0xc0 ]);
+        cpu.execute(Some(4));
+        assert!(cpu.memory[0xaa] == 0xaa);
+
 
         //TODO need 'transfer' instructions to get nontrivial values in X/Y
     }
