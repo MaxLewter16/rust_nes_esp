@@ -223,33 +223,8 @@ impl CPU {
 
     pub fn noop(&mut self) {}
 
-    pub fn transfer_a_x(&mut self) {
-        self.idx_register_x = self.accumulator;
-        self.update_negative_zero_flags(self.idx_register_x);
-    }
-
-    pub fn transfer_a_y(&mut self) {
-        self.idx_register_y = self.accumulator;
-        self.update_negative_zero_flags(self.idx_register_y);
-    }
-
-    pub fn transfer_sp_x(&mut self) {
-        self.idx_register_x = self.stack_pointer;
-        self.update_negative_zero_flags(self.idx_register_x);
-    }
-
-    pub fn transfer_x_a(&mut self) {
-        self.accumulator = self.idx_register_x;
-        self.update_negative_zero_flags(self.accumulator);
-    }
-
     pub fn transfer_x_sp(&mut self) {
         self.stack_pointer = self.idx_register_x;
-    }
-
-    pub fn transfer_y_a(&mut self) {
-        self.accumulator = self.idx_register_y;
-        self.update_negative_zero_flags(self.accumulator);
     }
 
     #[inline]
@@ -265,6 +240,30 @@ impl CPU {
     }
 
 }
+
+/*
+    transfer instructions
+*/
+// Does not work for 'transfer X to SP' instruction
+macro_rules! transfer_gen {
+    ($name: ident, $source: ident, $target: ident) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                self.$target = self.$source;
+                self.update_negative_zero_flags(self.$target);
+            }
+        }
+    };
+}
+transfer_gen!(transfer_a_x, accumulator, idx_register_x);
+transfer_gen!(transfer_x_a, idx_register_x, accumulator);
+transfer_gen!(transfer_a_y, accumulator, idx_register_y);
+transfer_gen!(transfer_y_a, idx_register_y, accumulator);
+transfer_gen!(transfer_sp_x, stack_pointer, idx_register_x);
+
+/*
+    load instructions
+*/
 
 /*
     store instructions
@@ -335,6 +334,19 @@ mod tests {
         assert_eq!(cpu.accumulator, 0xaa);
         assert_eq!(cpu.program_counter, 0x8002);
         assert_eq!(cpu.processor_status, ProcessorStatusFlags::NEGATIVE);
+    }
+
+    #[test]
+    fn test_transfer() {
+        // ora 0xaa
+        // txa
+        // txy
+        // tsp
+        let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0xaa, 0xa8, 0x9a]);
+        cpu.execute(Some(4));
+        assert!(cpu.idx_register_x == 0xaa && cpu.idx_register_y == 0xaa && cpu.stack_pointer == 0xaa);
+
+        //TODO test transfer back
     }
 
     #[test]
