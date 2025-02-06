@@ -227,6 +227,12 @@ impl CPU {
         self.stack_pointer = self.idx_register_x;
     }
 
+    pub fn load_m_a_immediate(&mut self) {
+        let address = self.get_immediate();
+        self.accumulator = self.memory[address];
+        self.update_negative_zero_flags(self.accumulator);
+    }
+
     #[inline]
     // set NEGATIVE flag if 'test' is negative, reset otherwise
     // set ZERO flag if 'test' is zero, reset otherwise
@@ -264,6 +270,37 @@ transfer_gen!(transfer_sp_x, stack_pointer, idx_register_x);
 /*
     load instructions
 */
+macro_rules! load_gen {
+    ($name: ident, $addressing_mode: ident, $target: ident) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = self.$addressing_mode();
+                self.$target = self.memory[address];
+                self.update_negative_zero_flags(self.$target);
+            }
+        }
+    };
+}
+load_gen!(load_a_immediate, get_immediate, accumulator);
+load_gen!(load_a_absolute, get_absolute, accumulator);
+load_gen!(load_a_absolute_x, get_absolute_x, accumulator);
+load_gen!(load_a_absolute_y, get_absolute_y, accumulator);
+load_gen!(load_a_zero_page, get_zero_page, accumulator);
+load_gen!(load_a_zero_page_x, get_zero_page_x, accumulator);
+load_gen!(load_a_zero_page_x_indirect, get_zero_page_x_indirect, accumulator);
+load_gen!(load_a_zero_page_y_indirect, get_zero_page_y_indirect, accumulator);
+
+load_gen!(load_x_immediate, get_immediate, idx_register_x);
+load_gen!(load_x_absolute, get_absolute, idx_register_x);
+load_gen!(load_x_absolute_y, get_absolute_y, idx_register_x);
+load_gen!(load_x_zero_page, get_zero_page, idx_register_x);
+load_gen!(load_x_zero_page_y, get_zero_page_y, idx_register_x);
+
+load_gen!(load_y_immediate, get_immediate, idx_register_y);
+load_gen!(load_y_absolute, get_absolute, idx_register_y);
+load_gen!(load_y_absolute_x, get_absolute_x, idx_register_y);
+load_gen!(load_y_zero_page, get_zero_page, idx_register_y);
+load_gen!(load_y_zero_page_x, get_zero_page_x, idx_register_y);
 
 /*
     store instructions
