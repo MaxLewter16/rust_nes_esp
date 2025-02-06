@@ -530,6 +530,17 @@ mod tests {
         cpu.execute(Some(4));
         assert!(cpu.memory[0xaa] == 0xaa);
 
+        //test zero-page y indirect
+        /*
+        lda #$aa
+        sta $c0
+        ldy #$0c
+        sta ($c0), y
+         */
+        let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0x85, 0xc0, 0xa0, 0x0c, 0x91, 0xc0 ]);
+        cpu.execute(Some(4));
+        assert!(cpu.memory[0xb6] == 0xaa);
+
 
         //TODO need 'transfer' instructions to get nontrivial values in X/Y
     }
