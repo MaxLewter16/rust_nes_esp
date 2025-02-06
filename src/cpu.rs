@@ -430,8 +430,6 @@ mod tests {
 
     }
 
-
-
     #[test]
     fn test_simple_store_ram() {
         let mut instr = vec![0x09, 0xaa];
@@ -464,6 +462,11 @@ mod tests {
         let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0x85, 0xff]);
         cpu.execute(Some(2));
         assert_eq!(cpu.memory[0x00ff], 0xaa);
+
+        //test zero page x
+        let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa2, 0xf0, 0x95, 0x0f, 0xa9, 0x00, 0xb5, 0x0f]);
+        cpu.execute(Some(5));
+        assert_eq!(cpu.accumulator, 0xaa);
 
         //TODO need 'transfer' instructions to get nontrivial values in X/Y
     }
