@@ -13,6 +13,15 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x01] = CPU::or_zero_page_x_indirect;
     map[0x11] = CPU::or_zero_page_y_indirect;
 
+     //'and' instructions
+    map[0x29] = CPU::and_immediate;
+    map[0x2D] = CPU::and_absolute;
+    map[0x3D] = CPU::and_absolute_x;
+    map[0x39] = CPU::and_absolute_y;
+    map[0x25] = CPU::and_zero_page;
+    map[0x35] = CPU::and_zero_page_x;
+    map[0x21] = CPU::and_zero_page_x_indirect;
+    map[0x31] = CPU::and_zero_page_y_indirect;
     //'store' to A instructions
     map[0x8d] = CPU::store_a_absolute;
     map[0x9d] = CPU::store_a_absolute_x;
@@ -61,6 +70,8 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0xbc] = CPU::load_y_absolute_x;
     map[0xa4] = CPU::load_y_zero_page;
     map[0xb4] = CPU::load_y_zero_page_x;
+
+
 
 
     map

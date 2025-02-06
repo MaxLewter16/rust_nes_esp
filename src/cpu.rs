@@ -359,7 +359,31 @@ or_gen!(or_zero_page_x, CPU::get_zero_page_x);
 or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 
-
+macro_rules! and_gen {
+    ($name: ident, $p: path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = $p(self);
+                let data = self.memory[address];
+                self.accumulator &= data;
+                //clear relevant flags
+                self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
+                //set flags
+                self.processor_status |=
+                    (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
+                    (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+            }
+        }
+    };
+}
+and_gen!(and_immediate, CPU::get_immediate);
+and_gen!(and_absolute, CPU::get_absolute);
+and_gen!(and_absolute_x, CPU::get_absolute_x);
+and_gen!(and_absolute_y, CPU::get_absolute_y);
+and_gen!(and_zero_page, CPU::get_zero_page);
+and_gen!(and_zero_page_x, CPU::get_zero_page_x);
+and_gen!(and_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
+and_gen!(and_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 mod tests {
     use super::*;
 
