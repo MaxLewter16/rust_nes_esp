@@ -209,7 +209,7 @@ impl CPU {
 
     fn get_absolute_y(&mut self) -> u16 {
         let base_addr = self.get_absolute();
-        base_addr.wrapping_add(self.idx_register_x as u16)
+        base_addr.wrapping_add(self.idx_register_y as u16)
     }
 
     /// Fetches an absolute indirect address value(used for JMP (indirect)).
@@ -401,6 +401,23 @@ mod tests {
         assert_eq!(cpu.accumulator, 0xbb);
         assert_eq!(cpu.idx_register_x, 0xbb);
         assert_eq!(cpu.idx_register_y, 0xbb);
+    }
+    
+    #[test]
+    fn test_simple_and() {
+        let mut cpu = CPU::with_program(vec![0x29, 0xaa]);
+        cpu.advance();
+        assert_eq!(cpu.accumulator, 0x00); // Fix: AND results in 0x00
+        assert_eq!(cpu.program_counter, 0x8002);
+        assert_eq!(cpu.processor_status, ProcessorStatusFlags::ZERO); // Fix: Expect ZERO, not NEGATIVE
+    }
+    #[test]
+    fn test_simple_and_neg() {
+        let mut cpu = CPU::with_program(vec![0xA9, 0xFF, 0x29, 0xAA]); // LDA #0xFF, AND #0xAA
+        cpu.execute(Some(2));
+        assert_eq!(cpu.accumulator, 0xAA);
+        assert_eq!(cpu.program_counter, 0x8004);
+        assert_eq!(cpu.processor_status, ProcessorStatusFlags::NEGATIVE);
     }
 
     #[test]
