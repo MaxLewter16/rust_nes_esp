@@ -71,8 +71,5 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0xa4] = CPU::load_y_zero_page;
     map[0xb4] = CPU::load_y_zero_page_x;
 
-
-
-
     map
 };

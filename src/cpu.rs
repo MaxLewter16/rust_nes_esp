@@ -388,13 +388,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_or() {
+    fn test_baseline() {
         // or 0xaa into Accumulator
         let mut cpu = CPU::with_program(vec![0x09, 0xaa]);
         cpu.advance();
         assert_eq!(cpu.accumulator, 0xaa);
         assert_eq!(cpu.program_counter, 0x8002);
         assert_eq!(cpu.processor_status, ProcessorStatusFlags::NEGATIVE);
+
+        let mut cpu = CPU::with_program(vec![0xa9, 0xbb, 0xa2, 0xbb, 0xa0, 0xbb]);
+        cpu.execute(Some(3));
+        assert_eq!(cpu.accumulator, 0xbb);
+        assert_eq!(cpu.idx_register_x, 0xbb);
+        assert_eq!(cpu.idx_register_y, 0xbb);
     }
 
     #[test]
@@ -403,12 +409,28 @@ mod tests {
         // txa
         // txy
         // tsp
-        let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0xaa, 0xa8, 0x9a]);
+        // lda 0xbb
+        // txa
+        // lda 0xbb
+        // tya
+        let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0xaa, 0xa8, 0x9a, 0xa9, 0xbb, 0x8a, 0xa9, 0xbb, 0x98, 0xa2, 0xbb, 0xba]);
         cpu.execute(Some(4));
         assert!(cpu.idx_register_x == 0xaa && cpu.idx_register_y == 0xaa && cpu.stack_pointer == 0xaa);
-
-        //TODO test transfer back
+        cpu.execute(Some(2));
+        assert!(cpu.accumulator == 0xaa);
+        cpu.execute(Some(2));
+        assert!(cpu.accumulator == 0xaa);
+        cpu.execute(Some(2));
+        assert!(cpu.stack_pointer == 0xaa);
+        assert!(cpu.idx_register_x == 0xaa);
     }
+
+    #[test]
+    fn test_loads() {
+
+    }
+
+
 
     #[test]
     fn test_simple_store_ram() {
