@@ -44,6 +44,34 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
 
     //'transfer' instructions
     map[0xaa] = CPU::transfer_a_x;
+    map[0x8a] = CPU::transfer_x_a;
+    map[0xa8] = CPU::transfer_a_y;
+    map[0x98] = CPU::transfer_y_a;
+    map[0xba] = CPU::transfer_sp_x;
+    map[0x9a] = CPU::transfer_x_sp;
+
+    //'load' instructions
+    map[0xa9] = CPU::load_a_immediate;
+    map[0xad] = CPU::load_a_absolute;
+    map[0xbd] = CPU::load_a_absolute_x;
+    map[0xb9] = CPU::load_a_absolute_y;
+    map[0xa5] = CPU::load_a_zero_page;
+    map[0xb5] = CPU::load_a_zero_page_x;
+    map[0xa1] = CPU::load_a_zero_page_x_indirect;
+    map[0xb1] = CPU::load_a_zero_page_y_indirect;
+
+    map[0xa2] = CPU::load_x_immediate;
+    map[0xae] = CPU::load_x_absolute;
+    map[0xbe] = CPU::load_x_absolute_y;
+    map[0xa6] = CPU::load_x_zero_page;
+    map[0xb6] = CPU::load_x_zero_page_y;
+
+    map[0xa0] = CPU::load_y_immediate;
+    map[0xac] = CPU::load_y_absolute;
+    map[0xbc] = CPU::load_y_absolute_x;
+    map[0xa4] = CPU::load_y_zero_page;
+    map[0xb4] = CPU::load_y_zero_page_x;
+
 
 
 

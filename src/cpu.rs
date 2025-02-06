@@ -223,15 +223,84 @@ impl CPU {
 
     pub fn noop(&mut self) {}
 
-    pub fn transfer_a_x(&mut self) {
-        self.idx_register_x = self.accumulator;
-        self.processor_status &= !(ProcessorStatusFlags::NEGATIVE | ProcessorStatusFlags::ZERO);
-        self.processor_status |=
-            (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
-            (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+    pub fn transfer_x_sp(&mut self) {
+        self.stack_pointer = self.idx_register_x;
+    }
+
+    pub fn load_m_a_immediate(&mut self) {
+        let address = self.get_immediate();
+        self.accumulator = self.memory[address];
+        self.update_negative_zero_flags(self.accumulator);
+    }
+
+    #[inline]
+    // set NEGATIVE flag if 'test' is negative, reset otherwise
+    // set ZERO flag if 'test' is zero, reset otherwise
+    pub fn update_negative_zero_flags(&mut self, test: u8) {
+         //clear relevant flags
+         self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
+         //set flags
+         self.processor_status |=
+             (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
+             (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
     }
 
 }
+
+/*
+    transfer instructions
+*/
+// Does not work for 'transfer X to SP' instruction
+macro_rules! transfer_gen {
+    ($name: ident, $source: ident, $target: ident) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                self.$target = self.$source;
+                self.update_negative_zero_flags(self.$target);
+            }
+        }
+    };
+}
+transfer_gen!(transfer_a_x, accumulator, idx_register_x);
+transfer_gen!(transfer_x_a, idx_register_x, accumulator);
+transfer_gen!(transfer_a_y, accumulator, idx_register_y);
+transfer_gen!(transfer_y_a, idx_register_y, accumulator);
+transfer_gen!(transfer_sp_x, stack_pointer, idx_register_x);
+
+/*
+    load instructions
+*/
+macro_rules! load_gen {
+    ($name: ident, $addressing_mode: ident, $target: ident) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = self.$addressing_mode();
+                self.$target = self.memory[address];
+                self.update_negative_zero_flags(self.$target);
+            }
+        }
+    };
+}
+load_gen!(load_a_immediate, get_immediate, accumulator);
+load_gen!(load_a_absolute, get_absolute, accumulator);
+load_gen!(load_a_absolute_x, get_absolute_x, accumulator);
+load_gen!(load_a_absolute_y, get_absolute_y, accumulator);
+load_gen!(load_a_zero_page, get_zero_page, accumulator);
+load_gen!(load_a_zero_page_x, get_zero_page_x, accumulator);
+load_gen!(load_a_zero_page_x_indirect, get_zero_page_x_indirect, accumulator);
+load_gen!(load_a_zero_page_y_indirect, get_zero_page_y_indirect, accumulator);
+
+load_gen!(load_x_immediate, get_immediate, idx_register_x);
+load_gen!(load_x_absolute, get_absolute, idx_register_x);
+load_gen!(load_x_absolute_y, get_absolute_y, idx_register_x);
+load_gen!(load_x_zero_page, get_zero_page, idx_register_x);
+load_gen!(load_x_zero_page_y, get_zero_page_y, idx_register_x);
+
+load_gen!(load_y_immediate, get_immediate, idx_register_y);
+load_gen!(load_y_absolute, get_absolute, idx_register_y);
+load_gen!(load_y_absolute_x, get_absolute_x, idx_register_y);
+load_gen!(load_y_zero_page, get_zero_page, idx_register_y);
+load_gen!(load_y_zero_page_x, get_zero_page_x, idx_register_y);
 
 /*
     store instructions
@@ -276,12 +345,7 @@ macro_rules! or_gen {
                 let address = $p(self);
                 let data = self.memory[address];
                 self.accumulator |= data;
-                //clear relevant flags
-                self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
-                //set flags
-                self.processor_status |=
-                    (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
-                    (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+                self.update_negative_zero_flags(self.accumulator);
             }
         }
     };
@@ -295,6 +359,9 @@ or_gen!(or_zero_page_x, CPU::get_zero_page_x);
 or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 
+/*
+    and instructions
+*/
 macro_rules! and_gen {
     ($name: ident, $p: path) => {
         impl CPU {
@@ -302,12 +369,7 @@ macro_rules! and_gen {
                 let address = $p(self);
                 let data = self.memory[address];
                 self.accumulator &= data;
-                //clear relevant flags
-                self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
-                //set flags
-                self.processor_status |=
-                    (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
-                    (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+                self.update_negative_zero_flags(self.accumulator);
             }
         }
     };
@@ -320,6 +382,8 @@ and_gen!(and_zero_page, CPU::get_zero_page);
 and_gen!(and_zero_page_x, CPU::get_zero_page_x);
 and_gen!(and_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 and_gen!(and_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+
+
 mod tests {
     use super::*;
 
@@ -349,6 +413,19 @@ mod tests {
         assert_eq!(cpu.accumulator, 0xAA);
         assert_eq!(cpu.program_counter, 0x8003);
         assert_eq!(cpu.processor_status, ProcessorStatusFlags::NEGATIVE);
+    }
+
+    #[test]
+    fn test_transfer() {
+        // ora 0xaa
+        // txa
+        // txy
+        // tsp
+        let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0xaa, 0xa8, 0x9a]);
+        cpu.execute(Some(4));
+        assert!(cpu.idx_register_x == 0xaa && cpu.idx_register_y == 0xaa && cpu.stack_pointer == 0xaa);
+
+        //TODO test transfer back
     }
 
     #[test]
