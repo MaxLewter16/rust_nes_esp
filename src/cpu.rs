@@ -359,6 +359,9 @@ or_gen!(or_zero_page_x, CPU::get_zero_page_x);
 or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 
+/*
+    and instructions
+*/
 macro_rules! and_gen {
     ($name: ident, $p: path) => {
         impl CPU {
@@ -366,12 +369,7 @@ macro_rules! and_gen {
                 let address = $p(self);
                 let data = self.memory[address];
                 self.accumulator &= data;
-                //clear relevant flags
-                self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
-                //set flags
-                self.processor_status |=
-                    (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
-                    (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+                self.update_negative_zero_flags(self.accumulator);
             }
         }
     };
@@ -384,6 +382,8 @@ and_gen!(and_zero_page, CPU::get_zero_page);
 and_gen!(and_zero_page_x, CPU::get_zero_page_x);
 and_gen!(and_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 and_gen!(and_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+
+
 mod tests {
     use super::*;
 
