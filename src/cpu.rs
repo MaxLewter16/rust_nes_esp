@@ -408,10 +408,9 @@ mod tests {
     #[test]
     fn test_simple_and_neg() {
         let mut cpu = CPU::with_program(vec![0xA9, 0xFF, 0x29, 0xAA]); // LDA #0xFF, AND #0xAA
-        cpu.advance(); // Execute LDA #0xFF
-        cpu.advance(); // Execute AND #0xAA
+        cpu.execute(Some(2));
         assert_eq!(cpu.accumulator, 0xAA);
-        assert_eq!(cpu.program_counter, 0x8003);
+        assert_eq!(cpu.program_counter, 0x8004);
         assert_eq!(cpu.processor_status, ProcessorStatusFlags::NEGATIVE);
     }
 
