@@ -239,6 +239,13 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
+    fn get_relative(&mut self) -> u16 {
+        let offset = (self.memory[self.program_counter] as i8) as i16;
+        self.program_counter += 1;
+        //? should it be allowed to branch outside of program memory
+        self.program_counter.wrapping_add(offset as u16)
+    }
+
     pub fn noop(&mut self) {}
 
     pub fn transfer_x_sp(&mut self) {
@@ -319,6 +326,31 @@ load_gen!(load_y_absolute, get_absolute, idx_register_y);
 load_gen!(load_y_absolute_x, get_absolute_x, idx_register_y);
 load_gen!(load_y_zero_page, get_zero_page, idx_register_y);
 load_gen!(load_y_zero_page_x, get_zero_page_x, idx_register_y);
+
+/*
+    branch instructions
+*/
+macro_rules! branch_gen {
+    ($name: ident, $inverse_name: ident, $flag: expr) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                if self.processor_status.contains($flag) {
+                    self.program_counter = self.get_relative();
+                }
+            }
+
+            pub fn $inverse_name(&mut self) {
+                if !self.processor_status.contains($flag) {
+                    self.program_counter = self.get_relative();
+                }
+            }
+        }
+    };
+}
+branch_gen!(branch_on_zero_set, branch_on_zero_reset, ProcessorStatusFlags::ZERO);
+branch_gen!(branch_on_carry_set, branch_on_carry_reset, ProcessorStatusFlags::CARRY);
+branch_gen!(branch_on_negative_set, branch_on_negative_reset, ProcessorStatusFlags::NEGATIVE);
+branch_gen!(branch_on_overflow_set, branch_on_overflow_reset, ProcessorStatusFlags::OVERFLOW);
 
 /*
     store instructions
@@ -406,6 +438,7 @@ mod tests {
     use super::*;
 
     #[test]
+    // tests or, lda, ldx, ldy
     fn test_baseline() {
         // or 0xaa into Accumulator
         let mut cpu = CPU::with_program(vec![0x09, 0xaa]);
@@ -420,7 +453,7 @@ mod tests {
         assert_eq!(cpu.idx_register_x, 0xbb);
         assert_eq!(cpu.idx_register_y, 0xbb);
     }
-    
+
     #[test]
     fn test_simple_and() {
         let mut cpu = CPU::with_program(vec![0x29, 0xaa]);
@@ -429,6 +462,7 @@ mod tests {
         assert_eq!(cpu.program_counter, 0x8002);
         assert_eq!(cpu.processor_status, ProcessorStatusFlags::ZERO); // Fix: Expect ZERO, not NEGATIVE
     }
+
     #[test]
     fn test_simple_and_neg() {
         let mut cpu = CPU::with_program(vec![0xA9, 0xFF, 0x29, 0xAA]); // LDA #0xFF, AND #0xAA
@@ -501,7 +535,81 @@ mod tests {
         //test zero page x
         let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa2, 0xf0, 0x95, 0x0f, 0xa9, 0x00, 0xb5, 0x0f]);
         cpu.execute(Some(5));
+        assert!(cpu.memory[0xff] == 0xaa);
         assert_eq!(cpu.accumulator, 0xaa);
+
+        //test zero page y
+        //lda 0xaa
+        //ldx 0xf0
+        //str 0xf(x)
+        //ldy 0xf0
+        //ld  0xf(y)
+        let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa2, 0xf0, 0x95, 0x0f, 0xa0, 0xf0, 0xb6, 0x0f]);
+        cpu.execute(Some(5));
+        assert!(cpu.memory[0xff] == 0xaa);
+        assert_eq!(cpu.idx_register_x, 0xaa);
+
+        //test absolute y
+        /*
+        lda #$aa
+        ldy #$ff
+        sta $1001, y
+         */
+        let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa0, 0xff, 0x99, 0x01, 0x10]);
+        cpu.execute(Some(3));
+        assert!(cpu.memory[0x1100] == 0xaa);
+
+        //test absolute x
+        /*
+        lda #$aa
+        ldx #$ff
+        sta $1001, x
+        */
+        let mut cpu = CPU::with_program(vec![0xa9,0xaa,0xa2,0xff,0x9d,0x01,0x10]);
+        cpu.execute(Some(3));
+        assert!(cpu.memory[0x1100] == 0xaa);
+
+        //test zero-page x indirect
+        /*
+        lda #$aa
+        sta $cc
+        ldx #$0c
+        sta ($c0, x)
+         */
+        let mut cpu = CPU::with_program(vec![ 0xa9, 0xaa, 0x85, 0xcc, 0xa2, 0x0c, 0x81, 0xc0 ]);
+        cpu.execute(Some(4));
+        assert!(cpu.memory[0xaa] == 0xaa);
+
+        //test zero-page y indirect
+        /*
+        lda #$aa
+        sta $c0
+        ldy #$0c
+        sta ($c0), y
+         */
+        let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0x85, 0xc0, 0xa0, 0x0c, 0x91, 0xc0 ]);
+        cpu.execute(Some(4));
+        assert!(cpu.memory[0xb6] == 0xaa);
+
+        //test relative, use branch on carry reset
+        //branch forward by maximum offset 3 times, branch back by max offset 3 times
+        let mut instr: Vec<u8> = Vec::new();
+        let mut address = 0;
+        instr.resize(0x200, 0);
+        instr[0x0..0x2].copy_from_slice(&[0x90, 0x7f]);
+        address += 0x7f + 0x2;
+        instr[address..address + 0x4].copy_from_slice(&[0x09, 0x01, 0x90, 0x7f]);
+        address += 0x7f + 0x4;
+        instr[address..address + 0xd].copy_from_slice(&[0x09, 0x02, 0x90, 0x07, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x90, 0x80]);
+        address = address + 0xd - 0x80;
+        instr[address..address + 0x4].copy_from_slice(&[0x09, 0x04, 0x90, 0x80]);
+        address = address + 0x4 - 0x80;
+        instr[address..address + 0x4].copy_from_slice(&[0x09, 0x08, 0x90, 0x80]);
+        let mut cpu = CPU::with_program(instr);
+        cpu.execute(Some(9));
+        assert_eq!(cpu.accumulator, 0x0f);
+
+
 
         //TODO need 'transfer' instructions to get nontrivial values in X/Y
     }
