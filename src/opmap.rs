@@ -82,5 +82,14 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x10] = CPU::branch_on_negative_reset;
     map[0x50] = CPU::branch_on_overflow_reset;
 
+    //flag control instructions
+    map[0x38] = CPU::set_carry;
+    map[0xf8] = CPU::set_decimal;
+    map[0x78] = CPU::set_interrupt;
+    map[0x18] = CPU::clear_carry;
+    map[0xd8] = CPU::clear_decimal;
+    map[0x58] = CPU::clear_interrupt;
+    map[0xb8] = CPU::clear_overflow;
+
     map
 };

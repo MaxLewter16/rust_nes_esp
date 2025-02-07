@@ -415,6 +415,32 @@ and_gen!(and_zero_page_x, CPU::get_zero_page_x);
 and_gen!(and_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 and_gen!(and_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 
+macro_rules! clear_flag_gen {
+    ($name:ident, $flag:expr) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                self.processor_status &= !$flag;
+            }
+        }
+    };
+}
+clear_flag_gen!(clear_carry, ProcessorStatusFlags::CARRY);
+clear_flag_gen!(clear_decimal, ProcessorStatusFlags::DECIMAL);
+clear_flag_gen!(clear_interrupt, ProcessorStatusFlags::INTERRUPT);
+clear_flag_gen!(clear_overflow, ProcessorStatusFlags::OVERFLOW);
+
+macro_rules! set_flag_gen {
+    ($name:ident, $flag:expr) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                self.processor_status |= $flag;
+            }
+        }
+    };
+}
+set_flag_gen!(set_carry, ProcessorStatusFlags::CARRY);
+set_flag_gen!(set_decimal, ProcessorStatusFlags::DECIMAL);
+set_flag_gen!(set_interrupt, ProcessorStatusFlags::INTERRUPT);
 
 mod tests {
     use super::*;
@@ -551,6 +577,9 @@ mod tests {
         cpu.execute(Some(3));
         assert!(cpu.memory[0x1100] == 0xaa);
 
+        //test absolute indirect
+
+
         //test zero-page x indirect
         /*
         lda #$aa
@@ -593,6 +622,17 @@ mod tests {
 
 
 
-        //TODO need 'transfer' instructions to get nontrivial values in X/Y
+        //TODO absolute indirect (jmp instruction)
+    }
+
+    #[test]
+    fn test_flag_set_reset() {
+        let mut cpu = CPU::with_program(vec![0x38, 0xf8, 0x78, 0x18, 0xd8, 0x58]);
+        cpu.execute(Some(3));
+        assert!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY | ProcessorStatusFlags::DECIMAL | ProcessorStatusFlags::INTERRUPT));
+        cpu.execute(Some(3));
+        assert!((!cpu.processor_status).contains(ProcessorStatusFlags::CARRY | ProcessorStatusFlags::DECIMAL | ProcessorStatusFlags::INTERRUPT));
+
+        //TODO test clear overflow
     }
 }
