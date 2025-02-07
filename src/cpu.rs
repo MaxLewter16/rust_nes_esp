@@ -1,4 +1,5 @@
 use std::{io::Write, ops::{Deref, DerefMut, Index, IndexMut}, u16};
+use std::fmt;
 use bitflags::bitflags;
 
 use crate::opmap::OP_MAP;
@@ -43,6 +44,23 @@ bitflags! {
         const UNUSED    = 1 << 5;  // Always set on NES
         const OVERFLOW  = 1 << 6;
         const NEGATIVE  = 1 << 7;
+    }
+}
+
+impl fmt::Display for ProcessorStatusFlags {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "N:{} V:{} -:{} B:{} D:{} I:{} Z:{} C:{}",
+            self.contains(ProcessorStatusFlags::NEGATIVE) as u8,
+            self.contains(ProcessorStatusFlags::OVERFLOW) as u8,
+            self.contains(ProcessorStatusFlags::UNUSED) as u8,  // Unused bit
+            self.contains(ProcessorStatusFlags::BREAK) as u8,
+            self.contains(ProcessorStatusFlags::DECIMAL) as u8,
+            self.contains(ProcessorStatusFlags::INTERRUPT) as u8,
+            self.contains(ProcessorStatusFlags::ZERO) as u8,
+            self.contains(ProcessorStatusFlags::CARRY) as u8
+        )
     }
 }
 
@@ -635,4 +653,89 @@ mod tests {
 
         //TODO test clear overflow
     }
+    macro_rules! test_and_or_instruction {
+        ($name:ident, $num_programs:expr, $program:expr, $initial_a:expr, $expected_a:expr) => {
+            #[test]
+            fn $name() {
+                let mut cpu = CPU::with_program($program.to_vec());
+    
+                cpu.accumulator = $initial_a;
+    
+                cpu.execute(Some($num_programs));
+    
+                // Verify accumulator result
+                assert_eq!(cpu.accumulator, $expected_a, "Accumulator incorrect: expected {:08b}, got {:08b}", $expected_a, cpu.accumulator);
+            }
+        };
+    }
+    // AND instructions
+
+    // and zero page (Opcode: 0x25)
+    test_and_or_instruction!(test_and_zero_page, 3, [0x85, 0x50, 0xA9, 0b00001010, 0x25, 0x50], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, AND 0x50
+    // and zero page x (Opcode: 0x35)
+    test_and_or_instruction!(test_and_zero_page_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x35, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, AND 0x00 x
+    // and abs (Opcode: 0x2D)
+    test_and_or_instruction!(test_and_absolute, 3, [0xa2, 0x50, 0x00, 0xA9, 0b00001010, 0x2D, 0x50, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, AND 0x0050 
+    // and abs X (Opcode: 0x3D)
+    test_and_or_instruction!(test_and_absolute_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x3D, 0x00, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, AND 0x0000 x 
+    // and abs Y (Opcode: 0x39)
+    test_and_or_instruction!(test_and_absolute_y, 4, [0xa0, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x39, 0x00, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, LDy: 0x50, STA: 0x50, LDA: 0b00001010, AND 0x0000 y
+    // and indirect X (Opcode: 0x21)
+    test_and_or_instruction!(test_and_indirect_x, 10, [  
+        0xA2, 0x10,         // LDX #$10  
+        0xA9, 0x08,         // LDA #0x08
+        0x85, 0x60,         // STA $60 (low byte of target address)  
+        0x85, 0x61,         // STA $61 (high byte of target address)  
+        0xA9, 0b10101010,   // LDA #0b10101010  
+        0x8D, 0x08, 0x08,   // STA $0808 (actual memory location operand)  
+        0xA9, 0b00001010,   // LDA #0b00001010 (value to AND with memory)  
+        0x21, 0x50          // AND ($50, X)  
+    ], 0b00001000, 0b00001010); // Expected: AND with 0b10101010 at $8008
+    // and indirect Y (Opcode: 0x31)
+    test_and_or_instruction!(test_and_indirect_y, 10, [  // Accum starts at 00
+        0xA0, 0x10,         // LDY #$10 (Y = 0x10)  
+        0x85, 0x10,         // STA $10 (Low byte of target address)  
+        0xA9, 0x01,         // LDA #$01 
+        0x85, 0x11,         // STA $11 (High byte of target address)  
+        0xA9, 0b10101010,   // LDA #0b10101010  
+        0x8D, 0x10, 0x01,   // STA $0110 (target address = $0100 + Y)  
+        0xA9, 0b00001010,   // LDA #0b00001010  
+        0x31, 0x10          // AND ($10), Y -> AND value at ($10) + Y  
+    ], 0b00000000, 0b00001010); 
+    
+    // OR instructions
+
+    //or zero page (Opcode: 0x05)    
+    test_and_or_instruction!(test_or_zero_page, 3, [0x85, 0x50, 0xA9, 0b00001010, 0x05, 0x50], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, OR 0x50
+    // or zero page x (Opcode: 0x15)
+    test_and_or_instruction!(test_or_zero_page_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x15, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x00 x 
+    // and abs (Opcode: 0x0D)
+    test_and_or_instruction!(test_or_absolute, 3, [0xa2, 0x50, 0x00, 0xA9, 0b00001010, 0x0D, 0x50, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, OR 0x0050
+    // Or abs X (Opcode: 0x1D)
+    test_and_or_instruction!(test_or_absolute_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x1D, 0x00, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x0000 x 
+    // Or abs y (Opcode: 0x19)
+    test_and_or_instruction!(test_or_absolute_y, 4, [0xa0, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x19, 0x00, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDy: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x0000 y 
+    // or indirect X (Opcode: 0x01)
+    test_and_or_instruction!(test_or_indirect_x, 10, [  
+        0xA2, 0x10,         // LDX #$10  
+        0xA9, 0x08,         // LDA #0x08
+        0x85, 0x60,         // STA $60 (low byte of target address)  
+        0x85, 0x61,         // STA $61 (high byte of target address)  
+        0xA9, 0b10101010,   // LDA #0b10101010  
+        0x8D, 0x08, 0x08,   // STA $0808 (actual memory location operand)  
+        0xA9, 0b00001010,   // LDA #0b00001010 (value to AND with memory)  
+        0x01, 0x50          // AND ($50, X)  
+    ], 0b00001000, 0b10101010);
+    // or indirect Y (Opcode: 0x31)
+    test_and_or_instruction!(test_or_indirect_y, 10, [  // Accum starts at 00
+        0xA0, 0x10,         // LDY #$10 (Y = 0x10)  
+        0x85, 0x10,         // STA $10 (Low byte of target address)  
+        0xA9, 0x01,         // LDA #$01 
+        0x85, 0x11,         // STA $11 (High byte of target address)  
+        0xA9, 0b10101010,   // LDA #0b10101010  
+        0x8D, 0x10, 0x01,   // STA $0110 (target address = $0100 + Y)  
+        0xA9, 0b00001010,   // LDA #0b00001010  
+        0x11, 0x10          // AND ($10), Y -> AND value at ($10) + Y  
+    ], 0b00000000, 0b10101010); 
+
 }
