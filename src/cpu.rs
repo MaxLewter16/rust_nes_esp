@@ -168,20 +168,20 @@ impl CPU {
         let pc = self.program_counter;
         // assume upper address byte is 0
         self.program_counter += 1;
-        (self.memory[pc] + self.idx_register_x) as u16
+        self.memory[pc].wrapping_add(self.idx_register_x) as u16
     }
 
     fn get_zero_page_y(&mut self) ->u16{
         let pc = self.program_counter;
         // assume upper address byte is 0
         self.program_counter += 1;
-        (self.memory[pc] + self.idx_register_y) as u16
+        self.memory[pc].wrapping_add(self.idx_register_y) as u16
     }
 
     fn get_zero_page_x_indirect(&mut self) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
-        let indirect_address = self.memory[pc] + self.idx_register_x;
+        let indirect_address = self.memory[pc].wrapping_add(self.idx_register_x);
         u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]])
     }
 
@@ -189,7 +189,7 @@ impl CPU {
         let pc = self.program_counter;
         self.program_counter += 1;
         let indirect_address = self.memory[pc];
-        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]]) + self.idx_register_y as u16
+        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address as u16 + 1]]).wrapping_add(self.idx_register_y as u16)
     }
 
     /// Fetches an absolute address but does NOT return the value.
