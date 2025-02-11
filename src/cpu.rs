@@ -1,4 +1,5 @@
-use std::{io::Write, ops::{Deref, DerefMut, Index, IndexMut}, u16};
+use std::{io, io::{Read, Write}, ops::{Deref, DerefMut, Index, IndexMut}, u16};
+use std::result::Result;
 use std::fmt;
 use bitflags::bitflags;
 
@@ -16,20 +17,21 @@ pub const EXPANSION_ROM: u16 = 0x4020;
 pub const SRAM: u16 = 0x6000;
 pub const PROGRAM_ROM: u16 = 0x8000;
 
-struct Program {
+struct ROM {
     file: Box<[u8]>,
+    start_address: u16,
 }
 
-impl Index<u16> for Program {
+impl Index<u16> for ROM {
     type Output = u8;
     fn index(&self, address: u16) -> &Self::Output {
-        &self.file[(address - PROGRAM_ROM) as usize]
+        &self.file[(address - self.start_address) as usize]
     }
 }
 
-impl IndexMut<u16> for Program {
+impl IndexMut<u16> for ROM {
     fn index_mut(&mut self, address: u16) -> &mut Self::Output {
-        &mut self.file[(address - 0x8000) as usize]
+        &mut self.file[(address - self.start_address) as usize]
     }
 }
 
@@ -75,8 +77,10 @@ pub struct CPU {
 }
 
 struct Memory {
-    program: Program,
+    program: Vec<ROM>,
+    vrom: Vec<ROM>,
     ram: [u8; (MMIO - RAM) as usize],
+    mapper: u8, //TODO should be enum probably
 }
 
 impl Index<u16> for Memory {
@@ -89,6 +93,17 @@ impl Index<u16> for Memory {
             SRAM..PROGRAM_ROM => &0u8, // SRAM (not yet implemented)
             PROGRAM_ROM..=u16::MAX => &self.program[address],
         }
+    }
+}
+
+pub enum NesError {
+    IO(io::Error),
+    FileFormat(&'static str)
+}
+
+impl From<io::Error> for NesError {
+    fn from(value: io::Error) -> Self {
+        NesError::IO(value)
     }
 }
 
@@ -105,11 +120,42 @@ impl Memory {
 
     fn from_program(mut program: Vec<u8>) -> Self {
         program.resize(0x10000 - PROGRAM_ROM as usize, 0);
-        Memory { program: Program{file: program.into_boxed_slice()}, ram: [0u8; (MMIO - RAM) as usize]}
+        Memory { program: ROM{file: program.into_boxed_slice()}, ram: [0u8; (MMIO - RAM) as usize]}
     }
 
-    fn from_file(path: String) -> Self {
-        unimplemented!()
+    fn from_file(path: String) -> Result<Self, NesError> {
+        let mut file = std::fs::File::open(path)?;
+        let mut header = [0u8; 16];
+        if file.read(&mut header)? < 16 {return Err(NesError::FileFormat("file too short"))};
+        if header[0..4] != ['N' as u8, 'E' as u8, 'S' as u8, 0x1a] {return Err(NesError::FileFormat("incorrect identifying bytes, not a .nes file?"))};
+
+        let prg_rom_count = header[4];
+        let vrom_count = header[5];
+        let rom_control = &header[6..7];
+        let ram_bank_count = header[8];
+
+        let mapper_number = (rom_control[1] & 0xf0) | (rom_control[0] >> 4);
+        let mirroring_type = (header[0] & 1) != 0;
+        let battery_ram = (header[0] & 2) != 0;
+        let trainer = (header[0] & 4) != 0;
+
+        let mut program = Vec::new();
+        let mut vrom = Vec::new();
+
+        for _ in 0..prg_rom_count {
+            let mut prg_rom_buf = Box::new([0u8; 16 * (1 << 10)]);
+            file.read_exact(prg_rom_buf.as_mut_slice())?;
+            program.push(ROM{file: prg_rom_buf, start_address: PROGRAM_ROM})
+        }
+
+        for _ in 0..vrom_count {
+            let mut vrom_buf = Box::new([0u8; 8 * (1 << 10)]);
+            file.read_exact(vrom_buf.as_mut_slice())?;
+            // ! VROM goes in PPU which is unimplemented
+            vrom.push(ROM{file: vrom_buf, start_address: EXPANSION_ROM})
+        }
+
+        Ok(Memory{program, vrom, ram: [0u8; (MMIO - RAM) as usize], mapper: mapper_number})
     }
 
     fn mmio(&self, address: u16) -> &u8 {
@@ -658,11 +704,11 @@ mod tests {
             #[test]
             fn $name() {
                 let mut cpu = CPU::with_program($program.to_vec());
-    
+
                 cpu.accumulator = $initial_a;
-    
+
                 cpu.execute(Some($num_programs));
-    
+
                 // Verify accumulator result
                 assert_eq!(cpu.accumulator, $expected_a, "Accumulator incorrect: expected {:08b}, got {:08b}", $expected_a, cpu.accumulator);
             }
@@ -675,67 +721,67 @@ mod tests {
     // and zero page x (Opcode: 0x35)
     test_and_or_instruction!(test_and_zero_page_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x35, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, AND 0x00 x
     // and abs (Opcode: 0x2D)
-    test_and_or_instruction!(test_and_absolute, 3, [0xa2, 0x50, 0x00, 0xA9, 0b00001010, 0x2D, 0x50, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, AND 0x0050 
+    test_and_or_instruction!(test_and_absolute, 3, [0xa2, 0x50, 0x00, 0xA9, 0b00001010, 0x2D, 0x50, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, AND 0x0050
     // and abs X (Opcode: 0x3D)
-    test_and_or_instruction!(test_and_absolute_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x3D, 0x00, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, AND 0x0000 x 
+    test_and_or_instruction!(test_and_absolute_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x3D, 0x00, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, AND 0x0000 x
     // and abs Y (Opcode: 0x39)
     test_and_or_instruction!(test_and_absolute_y, 4, [0xa0, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x39, 0x00, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, LDy: 0x50, STA: 0x50, LDA: 0b00001010, AND 0x0000 y
     // and indirect X (Opcode: 0x21)
-    test_and_or_instruction!(test_and_indirect_x, 10, [  
-        0xA2, 0x10,         // LDX #$10  
+    test_and_or_instruction!(test_and_indirect_x, 10, [
+        0xA2, 0x10,         // LDX #$10
         0xA9, 0x08,         // LDA #0x08
-        0x85, 0x60,         // STA $60 (low byte of target address)  
-        0x85, 0x61,         // STA $61 (high byte of target address)  
-        0xA9, 0b10101010,   // LDA #0b10101010  
-        0x8D, 0x08, 0x08,   // STA $0808 (actual memory location operand)  
-        0xA9, 0b00001010,   // LDA #0b00001010 (value to AND with memory)  
-        0x21, 0x50          // AND ($50, X)  
+        0x85, 0x60,         // STA $60 (low byte of target address)
+        0x85, 0x61,         // STA $61 (high byte of target address)
+        0xA9, 0b10101010,   // LDA #0b10101010
+        0x8D, 0x08, 0x08,   // STA $0808 (actual memory location operand)
+        0xA9, 0b00001010,   // LDA #0b00001010 (value to AND with memory)
+        0x21, 0x50          // AND ($50, X)
     ], 0b00001000, 0b00001010); // Expected: AND with 0b10101010 at $8008
     // and indirect Y (Opcode: 0x31)
     test_and_or_instruction!(test_and_indirect_y, 10, [  // Accum starts at 00
-        0xA0, 0x10,         // LDY #$10 (Y = 0x10)  
-        0x85, 0x10,         // STA $10 (Low byte of target address)  
-        0xA9, 0x01,         // LDA #$01 
-        0x85, 0x11,         // STA $11 (High byte of target address)  
-        0xA9, 0b10101010,   // LDA #0b10101010  
-        0x8D, 0x10, 0x01,   // STA $0110 (target address = $0100 + Y)  
-        0xA9, 0b00001010,   // LDA #0b00001010  
-        0x31, 0x10          // AND ($10), Y -> AND value at ($10) + Y  
-    ], 0b00000000, 0b00001010); 
-    
+        0xA0, 0x10,         // LDY #$10 (Y = 0x10)
+        0x85, 0x10,         // STA $10 (Low byte of target address)
+        0xA9, 0x01,         // LDA #$01
+        0x85, 0x11,         // STA $11 (High byte of target address)
+        0xA9, 0b10101010,   // LDA #0b10101010
+        0x8D, 0x10, 0x01,   // STA $0110 (target address = $0100 + Y)
+        0xA9, 0b00001010,   // LDA #0b00001010
+        0x31, 0x10          // AND ($10), Y -> AND value at ($10) + Y
+    ], 0b00000000, 0b00001010);
+
     // OR instructions
 
-    //or zero page (Opcode: 0x05)    
+    //or zero page (Opcode: 0x05)
     test_and_or_instruction!(test_or_zero_page, 3, [0x85, 0x50, 0xA9, 0b00001010, 0x05, 0x50], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, OR 0x50
     // or zero page x (Opcode: 0x15)
-    test_and_or_instruction!(test_or_zero_page_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x15, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x00 x 
+    test_and_or_instruction!(test_or_zero_page_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x15, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x00 x
     // and abs (Opcode: 0x0D)
     test_and_or_instruction!(test_or_absolute, 3, [0xa2, 0x50, 0x00, 0xA9, 0b00001010, 0x0D, 0x50, 0x00], 0b10101010, 0b00001010); // Set accumulator to 0b10101010, STA: 0x50, LDA: 0b00001010, OR 0x0050
     // Or abs X (Opcode: 0x1D)
-    test_and_or_instruction!(test_or_absolute_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x1D, 0x00, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x0000 x 
+    test_and_or_instruction!(test_or_absolute_x, 4, [0xa2, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x1D, 0x00, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDX: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x0000 x
     // Or abs y (Opcode: 0x19)
-    test_and_or_instruction!(test_or_absolute_y, 4, [0xa0, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x19, 0x00, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDy: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x0000 y 
+    test_and_or_instruction!(test_or_absolute_y, 4, [0xa0, 0x50, 0x8d, 0x50, 0x00, 0xA9, 0b00001010, 0x19, 0x00, 0x00], 0b10101010, 0b10101010); // Set accumulator to 0b10101010, LDy: 0x50, STA: 0x50, LDA: 0b00001010, OR 0x0000 y
     // or indirect X (Opcode: 0x01)
-    test_and_or_instruction!(test_or_indirect_x, 10, [  
-        0xA2, 0x10,         // LDX #$10  
+    test_and_or_instruction!(test_or_indirect_x, 10, [
+        0xA2, 0x10,         // LDX #$10
         0xA9, 0x08,         // LDA #0x08
-        0x85, 0x60,         // STA $60 (low byte of target address)  
-        0x85, 0x61,         // STA $61 (high byte of target address)  
-        0xA9, 0b10101010,   // LDA #0b10101010  
-        0x8D, 0x08, 0x08,   // STA $0808 (actual memory location operand)  
-        0xA9, 0b00001010,   // LDA #0b00001010 (value to AND with memory)  
-        0x01, 0x50          // AND ($50, X)  
+        0x85, 0x60,         // STA $60 (low byte of target address)
+        0x85, 0x61,         // STA $61 (high byte of target address)
+        0xA9, 0b10101010,   // LDA #0b10101010
+        0x8D, 0x08, 0x08,   // STA $0808 (actual memory location operand)
+        0xA9, 0b00001010,   // LDA #0b00001010 (value to AND with memory)
+        0x01, 0x50          // AND ($50, X)
     ], 0b00001000, 0b10101010);
     // or indirect Y (Opcode: 0x31)
     test_and_or_instruction!(test_or_indirect_y, 10, [  // Accum starts at 00
-        0xA0, 0x10,         // LDY #$10 (Y = 0x10)  
-        0x85, 0x10,         // STA $10 (Low byte of target address)  
-        0xA9, 0x01,         // LDA #$01 
-        0x85, 0x11,         // STA $11 (High byte of target address)  
-        0xA9, 0b10101010,   // LDA #0b10101010  
-        0x8D, 0x10, 0x01,   // STA $0110 (target address = $0100 + Y)  
-        0xA9, 0b00001010,   // LDA #0b00001010  
-        0x11, 0x10          // AND ($10), Y -> AND value at ($10) + Y  
-    ], 0b00000000, 0b10101010); 
+        0xA0, 0x10,         // LDY #$10 (Y = 0x10)
+        0x85, 0x10,         // STA $10 (Low byte of target address)
+        0xA9, 0x01,         // LDA #$01
+        0x85, 0x11,         // STA $11 (High byte of target address)
+        0xA9, 0b10101010,   // LDA #0b10101010
+        0x8D, 0x10, 0x01,   // STA $0110 (target address = $0100 + Y)
+        0xA9, 0b00001010,   // LDA #0b00001010
+        0x11, 0x10          // AND ($10), Y -> AND value at ($10) + Y
+    ], 0b00000000, 0b10101010);
 
 }
