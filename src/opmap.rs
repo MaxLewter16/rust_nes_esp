@@ -101,5 +101,15 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x61] = CPU::adc_zero_page_x_indirect;
     map[0x71] = CPU::adc_zero_page_y_indirect;
 
+    //'sbc' instructions
+    map[0xE9] = CPU::sbc_immediate;
+    map[0xE5] = CPU::sbc_zero_page;
+    map[0xF5] = CPU::sbc_zero_page_x;
+    map[0xED] = CPU::sbc_absolute;
+    map[0xFD] = CPU::sbc_absolute_x;
+    map[0xF9] = CPU::sbc_absolute_y;
+    map[0xE1] = CPU::sbc_zero_page_x_indirect;
+    map[0xF1] = CPU::sbc_zero_page_y_indirect;
+
     map
 };

@@ -506,6 +506,51 @@ add_with_carry_gen!(adc_zero_page, CPU::get_zero_page);
 add_with_carry_gen!(adc_zero_page_x, CPU::get_zero_page_x);
 add_with_carry_gen!(adc_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 add_with_carry_gen!(adc_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+
+/*
+    subtract with carry
+*/
+macro_rules! subtract_with_carry_gen {
+    ($name:ident, $addr_mode:path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = $addr_mode(self);
+                let data = self.memory[address];
+
+                // Extract carry bit as u8 (0 or 1)
+                let carry = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
+
+                let sum = self.accumulator.wrapping_add(!data).wrapping_add(carry);
+
+                // Check for underflow to set the borrow (inverse of carry)
+                if self.accumulator <= sum{
+                    self.processor_status.remove(ProcessorStatusFlags::CARRY);
+                } else {
+                    self.processor_status.insert(ProcessorStatusFlags::CARRY);
+                }  
+
+                // Detect signed overflow: Occurs if the result has a different sign than A but the same as memory
+                let signed_overflow = (self.accumulator ^ sum) & (!data ^ sum) & 0b10000000 != 0;
+                if signed_overflow {
+                    self.processor_status.insert(ProcessorStatusFlags::OVERFLOW);
+                } else {
+                    self.processor_status.remove(ProcessorStatusFlags::OVERFLOW);
+                }
+
+                self.accumulator = sum;
+                self.update_negative_zero_flags(self.accumulator);
+            }
+        }
+    };
+}
+subtract_with_carry_gen!(sbc_immediate, CPU::get_immediate);
+subtract_with_carry_gen!(sbc_absolute, CPU::get_absolute);
+subtract_with_carry_gen!(sbc_absolute_x, CPU::get_absolute_x);
+subtract_with_carry_gen!(sbc_absolute_y, CPU::get_absolute_y);
+subtract_with_carry_gen!(sbc_zero_page, CPU::get_zero_page);
+subtract_with_carry_gen!(sbc_zero_page_x, CPU::get_zero_page_x);
+subtract_with_carry_gen!(sbc_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
+subtract_with_carry_gen!(sbc_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 mod tests {
     use super::*;
 
@@ -803,7 +848,24 @@ macro_rules! test_adc_instruction {
         }
     };
 }
+macro_rules! test_sbc_instruction {
+    ($name:ident, $num_programs:expr, $program:expr, $expected_a:expr, $expected_flags:expr, $unexpected_flags:expr) => {
+        #[test]
+        fn $name() {
+            let mut cpu = CPU::with_program($program.to_vec());
 
+            cpu.execute(Some($num_programs));
+
+            // Verify accumulator result
+            assert_eq!(cpu.accumulator, $expected_a, "Accumulator incorrect: expected {:08b}, got {:08b}", $expected_a, cpu.accumulator);
+
+            // Verify expected flags
+            assert_eq!(cpu.processor_status.contains($expected_flags), true, "Expected flags {:?}, but got {:?}", $expected_flags, cpu.processor_status);
+            // Verify unexpected flags
+            assert_eq!(cpu.processor_status.contains($unexpected_flags), false, "Unexpected flags {:?}, but got {:?}", $unexpected_flags, cpu.processor_status);
+        }
+    };
+}
 // Test ADC without carry (Opcode: 0x69 - Immediate)
 test_adc_instruction!(test_adc_immediate, 2, [0xA9, 0x10, 0x69, 0x20], 0x10, 0x30, ProcessorStatusFlags::empty()); // A = 0x10, ADC #0x20 → A = 0x30, No Carry
 
@@ -822,5 +884,29 @@ test_adc_instruction!(test_adc_zero_page, 4, [0xA9, 0x10, 0x85, 0x50, 0xA9, 0x20
 // Test ADC zero page X (Opcode: 0x75)
 test_adc_instruction!(test_adc_zero_page_x, 5, [0xA2, 0x01, 0xA9, 0x10, 0x85, 0x51, 0xA9, 0x20, 0x75, 0x50], 0x20, 0x30, ProcessorStatusFlags::empty()); // Store 0x10 at 0x51 (0x50 + X), ADC 0x51
 
+// Double check this logic. Pretty sure subtract with carry needs the carry to be set to perform subtraction correctly, otherwise, it will be 1 less than we expected. 
 
+// Test SBC with carry (Opcode: 0xE9 - Immediate)
+test_sbc_instruction!(test_sbc_immediate, 3, [0x38, 0xA9, 0x20, 0xE9, 0x10], 0x10, ProcessorStatusFlags::CARRY, ProcessorStatusFlags::NEGATIVE | ProcessorStatusFlags::OVERFLOW | ProcessorStatusFlags::ZERO); //CLC, A = 0x20, SBC #0x10 → A = 0x10
+
+// Test SBC without carry (Opcode: 0xE9 - Immediate)
+test_sbc_instruction!(test_sbc_immediate_with_carry, 2, [0xA9, 0x20, 0xE9, 0x10], 0x0F, ProcessorStatusFlags::CARRY, ProcessorStatusFlags::NEGATIVE | ProcessorStatusFlags::OVERFLOW | ProcessorStatusFlags::ZERO); // A = 0x20, SBC #0x10, without carry → A = 0x11
+
+// Test SBC causing underflow (Opcode: 0xE9 - Immediate)
+test_sbc_instruction!(test_sbc_unsigned_borrow, 3, [0x38, 0xA9, 0x10, 0xE9, 0x20], 0xF0, ProcessorStatusFlags::NEGATIVE, ProcessorStatusFlags::CARRY | ProcessorStatusFlags::OVERFLOW | ProcessorStatusFlags::ZERO); // CLC, A = 0x10, SBC #0x20 → A = 0xF0, Borrow set
+
+// Test SBC causing signed overflow (Opcode: 0xE9 - Immediate)
+test_sbc_instruction!(test_sbc_signed_overflow, 3, [0x38, 0xA9, 0x80, 0xE9, 0x40], 0x40, ProcessorStatusFlags::OVERFLOW | ProcessorStatusFlags::CARRY, ProcessorStatusFlags::NEGATIVE); // CLC, A = 0x80, SBC #0x40 → A = 0x40, Overflow set
+
+// Test SBC zero page (Opcode: 0xED)
+test_sbc_instruction!(test_sbc_zero_page, 5, [0x38, 0xA9, 0x50, 0x85, 0x50, 0xA9, 0x60, 0xED, 0x50], 0x10, ProcessorStatusFlags::CARRY, ProcessorStatusFlags::NEGATIVE | ProcessorStatusFlags::OVERFLOW | ProcessorStatusFlags::ZERO); // CLC,, Store 0x50 at 0x50, SBC 0x50
+
+// Test SBC zero page X (Opcode: 0xFD)
+// test_adc_and_sbc_instruction!(test_sbc_zero_page_x, 5, [0xA2, 0x01, 0xA9, 0x50, 0x85, 0x51, 0xA9, 0x20, 0xFD, 0x50], 0x20, 0x10, ProcessorStatusFlags::empty()); // Store 0x50 at 0x51 (0x50 + X), SBC 0x51
+
+// Test SBC immediate with signed overflow (Opcode: 0xE9)
+test_sbc_instruction!(test_sbc_immediate_signed_overflow, 3, [0x38, 0xA9, 0x7F, 0xE9, 0x80], 0xFF, ProcessorStatusFlags::OVERFLOW | ProcessorStatusFlags::NEGATIVE, ProcessorStatusFlags::CARRY | ProcessorStatusFlags::ZERO); // A = 0x7F, SBC #0x80 → A = 0xFF, Overflow set
+
+// Test SBC causing underflow (Opcode: 0xE9 - Immediate)
+test_sbc_instruction!(test_sbc_underflow, 3, [0x38, 0xA9, 0x10, 0xE9, 0x20], 0xF0, ProcessorStatusFlags::NEGATIVE, ProcessorStatusFlags::CARRY); // A = 0x10, SBC #0x20 → A = 0xF0, Carry set
 }
