@@ -1,4 +1,4 @@
-use std::{io, io::{Read, Write}, ops::{Deref, DerefMut, Index, IndexMut}, u16};
+use std::{io::{self, Read, Write}, marker::PhantomPinned, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull, u16};
 use std::result::Result;
 use std::fmt;
 use bitflags::bitflags;
@@ -16,6 +16,8 @@ pub const MMIO: u16 = 0x2000;
 pub const EXPANSION_ROM: u16 = 0x4020;
 pub const SRAM: u16 = 0x6000;
 pub const PROGRAM_ROM: u16 = 0x8000;
+pub const PROGRAM_ROM_SIZE: u16 = 16 * (1 << 10);
+pub const PROGRAM_ROM_2: u16 = PROGRAM_ROM + PROGRAM_ROM_SIZE;
 
 struct ROM {
     file: Box<[u8]>,
@@ -77,8 +79,18 @@ pub struct CPU {
 }
 
 struct Memory {
-    program: Vec<ROM>,
+    program_rom: Vec<ROM>,
     vrom: Vec<ROM>,
+    /* Memory must uphold the following:
+        - active_program_1/2 must be non-null
+        - active_program_1/2 should not be used to modify program memory
+       Because reading program rom occurs every emulated cycle it should have
+       minimal overhead, which is achieved with a pointer to the active memory.
+    */
+    active_program_1: NonNull<ROM>,
+    active_program_2: NonNull<ROM>,
+    // because Memory is contains pointers to itself it can't be moved
+    _phantom_pin: PhantomPinned,
     ram: [u8; (MMIO - RAM) as usize],
     mapper: u8, //TODO should be enum probably
 }
@@ -91,7 +103,9 @@ impl Index<u16> for Memory {
             MMIO..EXPANSION_ROM => self.mmio(address % 8), // Mirrors every 8 bytes
             EXPANSION_ROM..SRAM => &0u8, //EXPANSION_ROM
             SRAM..PROGRAM_ROM => &0u8, // SRAM (not yet implemented)
-            PROGRAM_ROM..=u16::MAX => &self.program[address],
+            // this is safe because active program roms are always selected
+            PROGRAM_ROM..PROGRAM_ROM_2 => unsafe{&self.active_program_1.as_ref()[address]},
+            PROGRAM_ROM_2..=u16::MAX => unsafe{&self.active_program_2.as_ref()[address]},
         }
     }
 }
@@ -114,20 +128,35 @@ impl Memory {
             MMIO..EXPANSION_ROM => self.mmio_write(address % 8, data), // Mirrors every 8 bytes
             EXPANSION_ROM..SRAM => (), //EXPANSION_ROM
             SRAM..PROGRAM_ROM => (), // SRAM (not yet implemented)
-            PROGRAM_ROM..=u16::MAX => self.program[address] = data,
+            // TODO: writes to program rom are used to control memory mappers
+            PROGRAM_ROM..PROGRAM_ROM_2 => (),
+            PROGRAM_ROM_2..=u16::MAX => (),
         }
     }
 
     fn from_program(mut program: Vec<u8>) -> Self {
         program.resize(0x10000 - PROGRAM_ROM as usize, 0);
-        Memory { program: ROM{file: program.into_boxed_slice()}, ram: [0u8; (MMIO - RAM) as usize]}
+        let mut program = ROM{file: program.into_boxed_slice(),start_address: PROGRAM_ROM};
+        let ap1 = NonNull::new(&mut program).unwrap();
+        let ap2 = NonNull::new(&mut program).unwrap();
+        Memory {
+            program_rom: vec![program],
+            vrom: vec![],
+            active_program_1: ap1,
+            active_program_2: ap2,
+            ram: [0u8; (MMIO - RAM) as usize],
+            mapper: 0,
+            _phantom_pin: PhantomPinned
+        }
     }
 
     fn from_file(path: String) -> Result<Self, NesError> {
         let mut file = std::fs::File::open(path)?;
         let mut header = [0u8; 16];
         if file.read(&mut header)? < 16 {return Err(NesError::FileFormat("file too short"))};
-        if header[0..4] != ['N' as u8, 'E' as u8, 'S' as u8, 0x1a] {return Err(NesError::FileFormat("incorrect identifying bytes, not a .nes file?"))};
+        if header[0..4] != ['N' as u8, 'E' as u8, 'S' as u8, 0x1a] {
+            return Err(NesError::FileFormat("incorrect identifying bytes, not a .nes file?"))
+        };
 
         let prg_rom_count = header[4];
         let vrom_count = header[5];
@@ -155,7 +184,18 @@ impl Memory {
             vrom.push(ROM{file: vrom_buf, start_address: EXPANSION_ROM})
         }
 
-        Ok(Memory{program, vrom, ram: [0u8; (MMIO - RAM) as usize], mapper: mapper_number})
+        let active_program_1 = NonNull::new(&mut program[0]).unwrap();
+        let active_program_2 = NonNull::new(&mut program[0]).unwrap();
+
+        Ok(Memory{
+            program_rom: program,
+            active_program_1,
+            active_program_2,
+            vrom,
+            ram: [0u8; (MMIO - RAM) as usize],
+            mapper: mapper_number,
+            _phantom_pin: PhantomPinned
+        })
     }
 
     fn mmio(&self, address: u16) -> &u8 {
