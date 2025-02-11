@@ -91,5 +91,15 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x58] = CPU::clear_interrupt;
     map[0xb8] = CPU::clear_overflow;
 
+    //'adc' instructions
+    map[0x69] = CPU::adc_immediate; //nice
+    map[0x65] = CPU::adc_zero_page;
+    map[0x75] = CPU::adc_zero_page_x;
+    map[0x6D] = CPU::adc_absolute;
+    map[0x7D] = CPU::adc_absolute_x;
+    map[0x79] = CPU::adc_absolute_y;
+    map[0x61] = CPU::adc_zero_page_x_indirect;
+    map[0x71] = CPU::adc_zero_page_y_indirect;
+
     map
 };
