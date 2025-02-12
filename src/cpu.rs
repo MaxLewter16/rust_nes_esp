@@ -1017,4 +1017,28 @@ mod tests {
 
     // Test SBC causing underflow (Opcode: 0xE9 - Immediate)
     test_sbc_instruction!(test_sbc_underflow, 3, [0x38, 0xA9, 0x10, 0xE9, 0x20], 0xF0, ProcessorStatusFlags::NEGATIVE, ProcessorStatusFlags::CARRY); // A = 0x10, SBC #0x20 → A = 0xF0, Carry set
+
+    #[test]
+    fn test_stack() {
+        //test pha, pla
+        /*
+            lda #$11
+            pha
+            lda #$22
+            pha
+            pla
+            pla
+         */
+        let mut cpu = CPU::with_program(vec![0xa9, 0x11, 0x48, 0xa9, 0x22, 0x48, 0x68, 0x68 ]);
+        cpu.execute(Some(5));
+        assert_eq!(cpu.accumulator, 0x22);
+        cpu.advance();
+        assert_eq!(cpu.accumulator, 0x11);
+
+        let mut cpu = CPU::with_program(vec![0x08, 0xf8, 0x38, 0x78, 0x08, 0x28, 0x28 ]);
+        cpu.execute(Some(6));
+        assert_eq!(cpu.processor_status, ProcessorStatusFlags::CARRY | ProcessorStatusFlags::INTERRUPT | ProcessorStatusFlags::DECIMAL);
+        cpu.advance();
+        assert_eq!(cpu.processor_status.bits(), 0x00);
+    }
 }
