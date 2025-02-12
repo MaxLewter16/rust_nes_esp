@@ -19,6 +19,12 @@ pub struct RAM {
     start_address: u16,
 }
 
+impl RAM {
+    pub fn new<const S: usize>(start: u16) -> Self {
+        Self{file: Box::new([0u8; S]), start_address: start}
+    }
+}
+
 impl Index<u16> for RAM {
     type Output = u8;
     fn index(&self, address: u16) -> &Self::Output {
