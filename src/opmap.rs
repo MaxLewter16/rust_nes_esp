@@ -117,5 +117,20 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x68] = CPU::pull_a;
     map[0x28] = CPU::pull_status;
 
+    //'increment/decrement' instructions
+    map[0xce] = CPU::dec_absolute;
+    map[0xde] = CPU::dec_absolute_x;
+    map[0xc6] = CPU::dec_zero_page;
+    map[0xd6] = CPU::dec_zero_page_x;
+    map[0xee] = CPU::inc_absolute;
+    map[0xfe] = CPU::inc_absolute_x;
+    map[0xe6] = CPU::inc_zero_page;
+    map[0xf6] = CPU::inc_zero_page_x;
+    map[0xca] = CPU::dec_x;
+    map[0x88] = CPU::dec_y;
+    map[0xe8] = CPU::inc_x;
+    map[0xc8] = CPU::inc_y;
+
+
     map
 };
