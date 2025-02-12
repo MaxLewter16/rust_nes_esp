@@ -698,9 +698,6 @@ inc_dec_mem_gen!(dec_zero_page, CPU::get_zero_page, -);
 inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, -);
 
 
-
-
-
 mod tests {
     use super::*;
 
@@ -1082,5 +1079,22 @@ mod tests {
         assert_eq!(cpu.processor_status, ProcessorStatusFlags::CARRY | ProcessorStatusFlags::INTERRUPT | ProcessorStatusFlags::DECIMAL);
         cpu.advance();
         assert_eq!(cpu.processor_status.bits(), 0x00);
+    }
+
+    #[test]
+    fn test_inc_dec() {
+        /*
+            inc $00
+            inx
+            iny
+            dec $00
+            dex
+            dey
+         */
+        let mut cpu = CPU::with_program(vec![0xe6, 0x00, 0xe8, 0xc8, 0xc6, 0x00, 0xca, 0x88]);
+        cpu.execute(Some(3));
+        assert!(1 == cpu.memory[0] && 1 == cpu.idx_register_x && 1 == cpu.idx_register_y);
+        cpu.execute(Some(3));
+        assert!(0 == cpu.memory[0] && 0 == cpu.idx_register_x && 0 == cpu.idx_register_y);
     }
 }
