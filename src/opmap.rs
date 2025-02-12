@@ -131,6 +131,14 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0xe8] = CPU::inc_x;
     map[0xc8] = CPU::inc_y;
 
+    // 'ctrl' instructions
+    map[0x00] = CPU::break_instr;
+    map[0x40] = CPU::return_from_interrupt;
+    map[0x4c] = CPU::jump_absolute;
+    map[0x6c] = CPU::jump_absolute_indirect;
+    map[0x20] = CPU::jump_subroutine;
+    map[0x60] = CPU::return_from_subroutine;
+
 
     map
 };

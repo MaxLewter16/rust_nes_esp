@@ -332,6 +332,10 @@ impl CPU {
         self.program_counter.wrapping_add(offset as u16)
     }
 
+    fn get_stack(&self) -> u16 {
+        self.stack_pointer as u16 + STACK_OFFSET
+    }
+
     pub fn noop(&mut self) {}
 
     pub fn transfer_x_sp(&mut self) {
@@ -363,6 +367,45 @@ impl CPU {
     pub fn pull_status(&mut self) {
         self.stack_pointer += 1;
         self.processor_status = ProcessorStatusFlags::from_bits_retain(self.memory[self.stack_pointer as u16 + STACK_OFFSET]);
+    }
+
+    pub fn break_instr(&mut self) {
+        if self.processor_status.contains(ProcessorStatusFlags::INTERRUPT) {
+            let pc = self.program_counter.to_le_bytes();
+            self.memory.write(self.get_stack() - 0, pc[0]);
+            self.memory.write(self.get_stack() - 1,  pc[1]);
+            self.memory.write(self.get_stack() - 2, self.processor_status.bits());
+            self.processor_status &= !ProcessorStatusFlags::INTERRUPT;
+            self.stack_pointer -= 3;
+            self.program_counter = u16::from_le_bytes([self.memory[0xfffe], self.memory[0xffff]]);
+        }
+    }
+
+    pub fn return_from_interrupt(&mut self) {
+        self.processor_status = ProcessorStatusFlags::from_bits_retain(self.memory[self.get_stack() + 1]);
+        self.program_counter = u16::from_le_bytes([self.memory[self.get_stack() + 3], self.memory[self.get_stack() + 2]]);
+        self.stack_pointer += 3;
+    }
+
+    pub fn jump_absolute(&mut self) {
+        self.program_counter = self.get_absolute();
+    }
+
+    pub fn jump_absolute_indirect(&mut self) {
+        self.program_counter = self.get_absolute_indirect();
+    }
+
+    pub fn jump_subroutine(&mut self) {
+        let pc = (self.program_counter + 1).to_le_bytes();
+        self.memory.write(self.get_stack() - 0, pc[0]);
+        self.memory.write(self.get_stack() - 1,  pc[1]);
+        self.stack_pointer -= 2;
+        self.program_counter = self.get_absolute();
+    }
+
+    pub fn return_from_subroutine(&mut self) {
+        self.program_counter = u16::from_le_bytes([self.memory[self.get_stack() + 2], self.memory[self.get_stack() + 1]]) + 1;
+        self.stack_pointer += 2;
     }
 
     #[inline]
