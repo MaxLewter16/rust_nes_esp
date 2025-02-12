@@ -111,5 +111,11 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0xE1] = CPU::sbc_zero_page_x_indirect;
     map[0xF1] = CPU::sbc_zero_page_y_indirect;
 
+    //'stack' instructions
+    map[0x48] = CPU::push_a;
+    map[0x08] = CPU::push_status;
+    map[0x68] = CPU::pull_a;
+    map[0x28] = CPU::pull_status;
+
     map
 };
