@@ -84,6 +84,18 @@ impl PPU {
         }
     }
 
+    pub fn read(&mut self, address: u16) -> u8 {
+        match address {
+            0x2002 => {
+                self.byte_shift = 8;
+                self.ppu_status.bits()
+            },
+            0x2004 => self.sprite_ram[address],
+            0x2007 => self.vram[address],
+            _ => 0,
+        }
+    }
+
     pub fn set_ppu_control_1(&mut self, data: u8) {
         self.ppu_control_1 = PPUControl1::from_bits_retain(data);
     }

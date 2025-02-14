@@ -1,5 +1,6 @@
 use std::{io::{self, Read}, marker::PhantomPinned, ops::{Index, IndexMut}, ptr::NonNull, u16};
 use std::result::Result;
+use crate::ppu::PPU;
 
 // Memory Map constants
 // constants specify the start of named section
@@ -13,6 +14,28 @@ pub const PROGRAM_ROM_2: u16 = PROGRAM_ROM + PROGRAM_ROM_SIZE;
 pub const BATTERY_RAM: u16 = 0x6000;
 pub const BATTERY_RAM_SIZE: u16 = 0x2000;
 pub const TRAINER_SIZE: u16 = 1 << 9;
+
+const MMIO_WRITE_MAP: [fn(&mut PPU, u8); 8] = {
+    let mut map = [PPU::ignore as fn(&mut PPU, u8); 8];
+    //MMIO addresses [0x2000,0x2008)
+    map[0] = PPU::set_ppu_control_1;
+    map[1] = PPU::set_ppu_control_2;
+    map[3] = PPU::set_spr_ram_address;
+    map[4] = PPU::write_spram;
+    map[5] = PPU::set_scroll;
+    map[6] = PPU::set_vram_address;
+    map[7] = PPU::write_vram;
+    //MMIO addresses starting [0x4000,0x4020):
+    map
+};
+
+const fn address_mmio_map(address: u16) -> usize {
+    match address {
+        0x2000..0x4000 => (address as usize - 0x2000) % 0x8,
+        0x4000..0x4020 => address as usize - 0x4000,
+        _ => panic!("invalid mmio address")
+    }
+}
 
 pub struct RAM {
     file: Box<[u8]>,
@@ -64,6 +87,7 @@ pub struct Memory {
     _phantom_pin: PhantomPinned,
     ram: [u8; (MMIO - BUILTIN_RAM) as usize],
     battery_ram: Option<RAM>,
+    ppu: PPU,
     mapper: u8, //TODO should be enum probably
 }
 
@@ -91,7 +115,7 @@ impl Memory {
     pub fn write(&mut self, address: u16, data: u8) {
         match address {
             BUILTIN_RAM..MMIO => self.ram[(address % 0x0800) as usize] = data, // Mirror every 2 KB
-            MMIO..EXPANSION_ROM => self.mmio_write(address % 8, data), // Mirrors every 8 bytes
+            MMIO..EXPANSION_ROM => MMIO_WRITE_MAP[address_mmio_map(address)](&mut self.ppu, data),
             EXPANSION_ROM..SRAM => (), //EXPANSION_ROM
             SRAM..PROGRAM_ROM => if let Some(ref mut ram) = self.battery_ram {
                 ram[address] = data;
@@ -115,6 +139,7 @@ impl Memory {
             ram: [0u8; (MMIO - BUILTIN_RAM) as usize],
             battery_ram: None,
             mapper: 0,
+            ppu: PPU::new(),
             _phantom_pin: PhantomPinned
         }
     }
@@ -175,17 +200,12 @@ impl Memory {
             ram: [0u8; (MMIO - BUILTIN_RAM) as usize],
             battery_ram: battery_ram,
             mapper: mapper_number,
+            ppu: PPU::new(),
             _phantom_pin: PhantomPinned
         })
     }
 
     fn mmio(&self, address: u16) -> &u8 {
-        //TODO
-        // MMIO_MAP[address]();
-        unimplemented!()
-    }
-
-    fn mmio_write(&self, address: u16, data: u8) {
         //TODO
         // MMIO_MAP[address]();
         unimplemented!()
