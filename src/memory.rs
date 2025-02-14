@@ -96,14 +96,14 @@ impl Index<u16> for Memory {
     fn index(&self, address: u16) -> &Self::Output {
         match address {
             BUILTIN_RAM..MMIO => &self.ram[(address % 0x0800) as usize], // Mirror every 2 KB
-            MMIO..EXPANSION_ROM => self.mmio(address % 8), // Mirrors every 8 bytes
+            MMIO..EXPANSION_ROM => self.ppu.read(address), // Mirrors every 8 bytes
             EXPANSION_ROM..SRAM => &0u8, //EXPANSION_ROM
             SRAM..PROGRAM_ROM => if let Some(ref ram) = self.battery_ram {
                 &ram[address]
             } else {
                 // ! What should these reads return
                 &0u8
-            }, // SRAM (not yet implemented)
+            },
             // this is safe because active program roms are always selected
             PROGRAM_ROM..PROGRAM_ROM_2 => unsafe{&self.active_program_1.as_ref()[address]},
             PROGRAM_ROM_2..=u16::MAX => unsafe{&self.active_program_2.as_ref()[address]},

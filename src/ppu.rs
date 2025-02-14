@@ -1,20 +1,13 @@
 
 use crate::memory::{MMIO, RAM};
-use bitflags::bitflags;
+use bitflags::{bitflags, Flags};
+use std::cell::RefCell;
 
 const VRAM_SIZE: u16 = 16 * (1 << 10);
 const SPRAM_SIZE: u16 = 1 << 8;
-const MMIO_WRITE_MAP: [fn(&mut PPU, u8); 8] = {
-    let mut map = [PPU::ignore as fn(&mut PPU, u8); 8];
-    map[0] = PPU::set_ppu_control_1;
-    map[1] = PPU::set_ppu_control_2;
-    map[3] = PPU::set_spr_ram_address;
-    map[4] = PPU::write_spram;
-    map[5] = PPU::set_scroll;
-    map[6] = PPU::set_vram_address;
-    map[7] = PPU::write_vram;
-    map
-};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PPUStatus(u8);
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,8 +31,7 @@ bitflags! {
         const BackgroundColorMask = 0xe0;
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct PPUStatus: u8 {
+    impl PPUStatus: u8 {
         const VRAMWriteIndicator = 0x10;
         const ScanlineSpriteCount = 0x20;
         const SpriteCollision = 0x40;
@@ -55,7 +47,9 @@ pub struct PPU {
     ppu_status: PPUStatus,
     spr_ram_address: u8,
     vram_address: u16,
-    byte_shift: u8,
+    // allow mutability on reads of PPU through non-mutable reference
+    // this is purely interior state, a reference to this data should never shared
+    byte_shift: RefCell<u8>,
     x_scroll: u8,
     y_scroll: u8
 }
@@ -70,29 +64,21 @@ impl PPU {
             ppu_status: PPUStatus::from_bits_truncate(0),
             spr_ram_address: 0,
             vram_address: 0,
-            byte_shift: 8,
+            byte_shift: 8.into(),
             x_scroll: 0,
             y_scroll: 0,
         }
     }
 
-    pub fn write(&mut self, address: u16, data: u8) {
-        if let Some(address) = address.checked_sub(0x2000) {
-            if let Some(write) = MMIO_WRITE_MAP.get(address as usize) {
-                write(self, data);
-            }
-        }
-    }
-
-    pub fn read(&mut self, address: u16) -> u8 {
+    pub fn read(&self, address: u16) -> &u8 {
         match address {
             0x2002 => {
-                self.byte_shift = 8;
-                self.ppu_status.bits()
-            },
-            0x2004 => self.sprite_ram[address],
-            0x2007 => self.vram[address],
-            _ => 0,
+                self.byte_shift.replace(8);
+                &self.ppu_status.0
+            }
+            0x2004 => &self.sprite_ram[address],
+            0x2007 => &self.vram[address],
+            _ => &0,
         }
     }
 
@@ -109,20 +95,20 @@ impl PPU {
     }
 
     pub fn set_scroll(&mut self, data: u8) {
-        if self.byte_shift != 0 {
+        if *self.byte_shift.borrow() != 0 {
             self.x_scroll = data;
         } else {
             self.y_scroll = data;
         }
-        if self.byte_shift == 0 {self.byte_shift = 8} else {self.byte_shift = 0}
+        if *self.byte_shift.borrow() == 0 {self.byte_shift.replace(8);} else {self.byte_shift.replace(0);}
     }
 
     pub fn set_vram_address(&mut self, data: u8) {
         //clear bits to write
-        self.vram_address &= !(0xff << self.byte_shift);
+        self.vram_address &= !(0xff << *self.byte_shift.borrow());
         //write address portion, ignore upper two bits
-        self.vram_address |= ((data as u16) << self.byte_shift) & 0xa0;
-        if self.byte_shift == 0 {self.byte_shift = 8} else {self.byte_shift = 0}
+        self.vram_address |= ((data as u16) << *self.byte_shift.borrow()) & 0xa0;
+        if *self.byte_shift.borrow() == 0 {self.byte_shift.replace(8);} else {self.byte_shift.replace(0);}
         if self.ppu_control_1.contains(PPUControl1::AddressIncrement) {self.vram_address += 32} else {self.vram_address += 1}
     }
 
