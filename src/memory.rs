@@ -103,7 +103,7 @@ pub struct Memory {
     _phantom_pin: PhantomPinned,
     ram: [u8; (MMIO - BUILTIN_RAM) as usize],
     battery_ram: Option<RAM>,
-    ppu: PPU,
+    pub ppu: PPU,
     mapper: u8, //TODO should be enum probably
 }
 
@@ -182,7 +182,7 @@ impl Memory {
 
         let prg_rom_count = header[4];
         let vrom_count = header[5];
-        let rom_control = &header[6..7];
+        let rom_control = &header[6..8];
         let ram_bank_count = header[8];
 
         let mapper_number = (rom_control[1] & 0xf0) | (rom_control[0] >> 4);

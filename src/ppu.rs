@@ -20,10 +20,11 @@ impl PatternTable<'_> {
     }
 
     // writes pixels where pixels[0][0] is the upper left and pixels[15][15] is bottom right
+    // *NOTE: scales pixel value for a greyscale image
     fn write_pixels(&self, pixels: &mut[[u8; 8]]) {
         for i in 0..8 {
             for j in 0..8 {
-                pixels[i][j] = self.get_pixel((i,j));
+                pixels[i][j] = self.get_pixel((i,j)) * 64;
             }
         }
     }
@@ -39,7 +40,9 @@ impl PatternTable<'_> {
         let mut pixel_tmp = [[0u8; 8]; 8];
         for (id, pattern_table) in pattern_tables.chunks(16).map(|s| PatternTable{data: s.try_into().expect("")}).enumerate(){
             pattern_table.write_pixels(&mut pixel_tmp);
-            for row in 0..8 {image_view[(id/8)*64 + id%8 + row*8].copy_from_slice(&pixel_tmp[row])}
+            // 16 tiles per row
+            // 8 rows per tile layer
+            for row in 0..8 {image_view[(id/16)*128 + id%16 + row*16].copy_from_slice(&pixel_tmp[row])}
         }
         GrayImage::from_vec(1 << 7, 1 << 7, image).unwrap()
     }
@@ -119,10 +122,12 @@ impl PPU {
             y_scroll: 0,
         };
 
-        // by default load first two vroms into program tables
-        // if only a single vrom is present, duplicate this vrom
-        ppu.load_vrom(0, 0);
-        ppu.load_vrom(if ppu.vrom.len() > 1 {1} else {0}, 1);
+        if ppu.vrom.len() > 0 {
+            // by default load first two vroms into program tables
+            // if only a single vrom is present, duplicate this vrom
+            ppu.load_vrom(0, 0);
+            ppu.load_vrom(if ppu.vrom.len() > 1 {1} else {0}, 1);
+        }
 
         ppu
     }
@@ -191,10 +196,15 @@ impl PPU {
 mod tests {
     use super::*;
     use crate::cpu::CPU;
+    use crate::memory::Memory;
 
     #[cfg(feature = "image")]
     #[test]
     fn test_pattern_table_image() {
-        let cpu = CPU::from_file(String::from("nes_file.nes")).expect("failed to load file");
+        let mem = Memory::from_file(String::from("../galaga.nes")).expect("failed to load file");
+        for (i, table) in mem.ppu.vrom.iter().enumerate() {
+            let image= PatternTable::generate_pattern_table_image(table.as_slice().try_into().expect("incorrectly sized pattern table"));
+            image.save_with_format(format!("pattern_table_{i}.png"), image::ImageFormat::Png).expect("failed to save pattern table to png");
+        }
     }
 }
