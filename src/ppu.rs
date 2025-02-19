@@ -3,41 +3,45 @@ use crate::memory::{MMIO, RAM};
 use bitflags::{bitflags, Flags};
 use std::{cell::RefCell, u8};
 #[cfg(feature = "image")]
-use image::{GrayImage, Luma, ImageResult};
+use image::{GrayImage};
 
 const VRAM_SIZE: u16 = 16 * (1 << 10);
 const SPRAM_SIZE: u16 = 1 << 8;
+const PATTERN_TABLE_SIZE: u16 = 1 << 12;
 
 struct PatternTable<'a> {
     data: &'a [u8; 16],
 }
 
-impl PatternTable {
+impl PatternTable<'_> {
     fn get_pixel(&self, idx: (usize, usize)) -> u8 {
         let (i, j) = idx;
-        ((self.data[i] >> (7 - i)) & 1) | (((self.data[i] >> (7 - i)) & 1) << 1)
+        ((self.data[i] >> (7 - j)) & 1) | (((self.data[i + 8] >> (7 - j)) & 1) << 1)
     }
+
+    // writes pixels where pixels[0][0] is the upper left and pixels[15][15] is bottom right
+    fn write_pixels(&self, pixels: &mut[[u8; 8]]) {
+        for i in 0..8 {
+            for j in 0..8 {
+                pixels[i][j] = self.get_pixel((i,j));
+            }
+        }
+    }
+
 }
 
 #[cfg(feature = "image")]
-impl PatternTable {
-
-    // writes pixels where pixels[0][0] is the upper left and pixels[15][15] is bottom right
-    fn write_pixels(&self, pixels: &[&mut[Luma<u8>]]) {
-        const fn value_map(p: u8) -> Luma<u8> {
-            match p {
-                0 => [0],
-                1 => [u8::MAX / 4],
-                2 => [u8::MAX / 2],
-                _ => [u8::MAX / 4 *3],
-            }
+impl PatternTable<'_> {
+    fn generate_pattern_table_image(pattern_tables: &[u8; PATTERN_TABLE_SIZE as usize]) -> GrayImage {
+        let mut image = Vec::new();
+        image.resize(1 << 14, 0u8);
+        let mut image_view: Vec<&mut [u8]> = image.chunks_mut(8).collect();
+        let mut pixel_tmp = [[0u8; 8]; 8];
+        for (id, pattern_table) in pattern_tables.chunks(16).map(|s| PatternTable{data: s.try_into().expect("")}).enumerate(){
+            pattern_table.write_pixels(&mut pixel_tmp);
+            for row in 0..8 {image_view[(id/8)*64 + id%8 + row*8].copy_from_slice(&pixel_tmp[row])}
         }
-
-        for i in 0..8 {
-            for j in 0..8 {
-                pixels[i][j] = value_map(self.get_pixel((i,j)));
-            }
-        }
+        GrayImage::from_vec(1 << 7, 1 << 7, image).unwrap()
     }
 }
 
