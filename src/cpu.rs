@@ -2,7 +2,7 @@ use std::u16;
 use std::fmt;
 use bitflags::bitflags;
 
-use crate::memory::{Memory, PROGRAM_ROM, MMIO};
+use crate::memory::{Memory, NesError, PROGRAM_ROM, MMIO};
 use crate::opmap::OP_MAP;
 
 // Primary Registers?
@@ -66,6 +66,18 @@ impl CPU {
             idx_register_y: 0,
             processor_status: ProcessorStatusFlags::from_bits_truncate(0b000000),
         }
+    }
+
+    pub fn from_file(path: String) -> Result<Self, NesError> {
+        Ok(CPU {
+            memory: Memory::from_file(path)?,
+            program_counter: PROGRAM_ROM,
+            stack_pointer: STACK_RESET,
+            accumulator: 0,
+            idx_register_x: 0,
+            idx_register_y: 0,
+            processor_status: ProcessorStatusFlags::from_bits_truncate(0b000000),
+        })
     }
 
     // pub fn new() -> Self {

@@ -7,7 +7,7 @@ use image::{GrayImage};
 
 const VRAM_SIZE: u16 = 16 * (1 << 10);
 const SPRAM_SIZE: u16 = 1 << 8;
-const PATTERN_TABLE_SIZE: u16 = 1 << 12;
+const PATTERN_TABLE_SIZE: usize = 1 << 12;
 
 struct PatternTable<'a> {
     data: &'a [u8; 16],
@@ -86,6 +86,7 @@ bitflags! {
 }
 
 pub struct PPU {
+    vrom: Vec<RAM>,
     vram: RAM,
     sprite_ram: RAM,
     ppu_control_1: PPUControl1,
@@ -103,9 +104,10 @@ pub struct PPU {
 }
 
 impl PPU {
-    pub fn new() -> Self {
-        PPU{
+    pub fn new(vrom: Vec<RAM>) -> Self {
+        let mut ppu = PPU{
             vram: RAM::new::<{VRAM_SIZE as usize}>(0),
+            vrom,
             sprite_ram: RAM::new::<{SPRAM_SIZE as usize}>(0),
             ppu_control_1: PPUControl1::from_bits_truncate(0),
             ppu_control_2: PPUControl2::from_bits_truncate(0),
@@ -115,7 +117,22 @@ impl PPU {
             byte_shift: 8.into(),
             x_scroll: 0,
             y_scroll: 0,
-        }
+        };
+
+        // by default load first two vroms into program tables
+        // if only a single vrom is present, duplicate this vrom
+        ppu.load_vrom(0, 0);
+        ppu.load_vrom(if ppu.vrom.len() > 1 {1} else {0}, 1);
+
+        ppu
+    }
+
+    /*
+        dst: 1 or 0, target pattern table
+        src: vrom to load
+     */
+    pub fn load_vrom(&mut self, src: usize, dst: usize) {
+        self.vram.as_slice_mut()[dst*PATTERN_TABLE_SIZE..(dst+1)*PATTERN_TABLE_SIZE].copy_from_slice(self.vrom[src].as_slice());
     }
 
     pub fn read(&self, address: u16) -> &u8 {
@@ -173,10 +190,11 @@ impl PPU {
 
 mod tests {
     use super::*;
+    use crate::cpu::CPU;
 
     #[cfg(feature = "image")]
     #[test]
-    fn generate_pattern_table_image() {
-
+    fn test_pattern_table_image() {
+        let cpu = CPU::from_file(String::from("nes_file.nes")).expect("failed to load file");
     }
 }

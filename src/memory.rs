@@ -1,4 +1,4 @@
-use std::{io::{self, Read}, marker::PhantomPinned, ops::{Index, IndexMut}, ptr::NonNull, u16};
+use std::{io::{self, Read}, marker::PhantomPinned, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull, u16};
 use std::result::Result;
 use crate::ppu::PPU;
 
@@ -11,6 +11,7 @@ pub const SRAM: u16 = 0x6000;
 pub const PROGRAM_ROM: u16 = 0x8000;
 pub const PROGRAM_ROM_SIZE: u16 = 16 * (1 << 10);
 pub const PROGRAM_ROM_2: u16 = PROGRAM_ROM + PROGRAM_ROM_SIZE;
+pub const VROM_SIZE: u16 = 0x1000;
 pub const BATTERY_RAM: u16 = 0x6000;
 pub const BATTERY_RAM_SIZE: u16 = 0x2000;
 pub const TRAINER_SIZE: u16 = 1 << 9;
@@ -46,6 +47,16 @@ impl RAM {
     pub fn new<const S: usize>(start: u16) -> Self {
         Self{file: Box::new([0u8; S]), start_address: start}
     }
+
+    // *Note: Deref<Target = [u8]> is not implemented because indexing is different
+    // *from a typical slice
+    pub fn as_slice(&self) -> &[u8] {
+        &self.file
+    }
+
+    pub fn as_slice_mut(&mut self) -> &mut[u8] {
+        &mut self.file
+    }
 }
 
 impl Index<u16> for RAM {
@@ -61,6 +72,12 @@ impl IndexMut<u16> for RAM {
     }
 }
 
+enum ProgramROMDst {
+    One,
+    Two
+}
+
+#[derive(Debug)]
 pub enum NesError {
     IO(io::Error),
     FileFormat(&'static str)
@@ -74,7 +91,6 @@ impl From<io::Error> for NesError {
 
 pub struct Memory {
     program_rom: Vec<RAM>,
-    vrom: Vec<RAM>,
     /* Memory must uphold the following:
         - active_program_1/2 must be non-null
         - active_program_1/2 should not be used to modify program memory
@@ -126,6 +142,19 @@ impl Memory {
         }
     }
 
+    pub fn set_active_ram(&mut self, src: usize, dst: ProgramROMDst) {
+        match dst {
+            ProgramROMDst::One => {
+                self.program_rom[src].start_address = PROGRAM_ROM;
+                self.active_program_1 = NonNull::new(&mut self.program_rom[src]).unwrap();
+            }
+            ProgramROMDst::Two => {
+                self.program_rom[src].start_address = PROGRAM_ROM_2;
+                self.active_program_2 = NonNull::new(&mut self.program_rom[src]).unwrap();
+            }
+        }
+    }
+
     pub fn from_program(mut program: Vec<u8>) -> Self {
         program.resize(0x10000 - PROGRAM_ROM as usize, 0);
         let mut program = RAM{file: program.into_boxed_slice(),start_address: PROGRAM_ROM};
@@ -133,13 +162,12 @@ impl Memory {
         let ap2 = NonNull::new(&mut program).unwrap();
         Memory {
             program_rom: vec![program],
-            vrom: vec![],
             active_program_1: ap1,
             active_program_2: ap2,
             ram: [0u8; (MMIO - BUILTIN_RAM) as usize],
             battery_ram: None,
             mapper: 0,
-            ppu: PPU::new(),
+            ppu: PPU::new(vec![]),
             _phantom_pin: PhantomPinned
         }
     }
@@ -177,18 +205,18 @@ impl Memory {
         let mut vrom = Vec::new();
 
         for _ in 0..prg_rom_count {
-            let mut prg_rom_buf = Box::new([0u8; 16 * (1 << 10)]);
+            let mut prg_rom_buf = Box::new([0u8; PROGRAM_ROM_SIZE as usize]);
             file.read_exact(prg_rom_buf.as_mut_slice())?;
             program.push(RAM{file: prg_rom_buf, start_address: PROGRAM_ROM})
         }
 
         for _ in 0..vrom_count {
-            let mut vrom_buf = Box::new([0u8; 8 * (1 << 10)]);
+            let mut vrom_buf = Box::new([0u8; VROM_SIZE as usize]);
             file.read_exact(vrom_buf.as_mut_slice())?;
-            // ! VROM goes in PPU which is unimplemented
-            vrom.push(RAM{file: vrom_buf, start_address: EXPANSION_ROM})
+            vrom.push(RAM{file: vrom_buf, start_address: 0})
         }
 
+        // by default load a single program rom which is mirrored
         let active_program_1 = NonNull::new(&mut program[0]).unwrap();
         let active_program_2 = NonNull::new(&mut program[0]).unwrap();
 
@@ -196,11 +224,10 @@ impl Memory {
             program_rom: program,
             active_program_1,
             active_program_2,
-            vrom,
             ram: [0u8; (MMIO - BUILTIN_RAM) as usize],
             battery_ram: battery_ram,
             mapper: mapper_number,
-            ppu: PPU::new(),
+            ppu: PPU::new(vrom),
             _phantom_pin: PhantomPinned
         })
     }
