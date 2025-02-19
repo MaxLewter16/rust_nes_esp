@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+image = {version="0.25.5", optional=true}
+
 [dependencies.bitflags]
 version = "2.8.0"

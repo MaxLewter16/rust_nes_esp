@@ -1,10 +1,52 @@
 
 use crate::memory::{MMIO, RAM};
 use bitflags::{bitflags, Flags};
-use std::cell::RefCell;
+use std::{cell::RefCell, u8};
+#[cfg(feature = "image")]
+use image::{GrayImage, Luma, ImageResult};
 
 const VRAM_SIZE: u16 = 16 * (1 << 10);
 const SPRAM_SIZE: u16 = 1 << 8;
+
+struct PatternTable<'a> {
+    data: &'a [u8; 16],
+}
+
+impl PatternTable {
+    fn get_pixel(&self, idx: (usize, usize)) -> u8 {
+        let (i, j) = idx;
+        ((self.data[i] >> (7 - i)) & 1) | (((self.data[i] >> (7 - i)) & 1) << 1)
+    }
+}
+
+#[cfg(feature = "image")]
+impl PatternTable {
+
+    // writes pixels where pixels[0][0] is the upper left and pixels[15][15] is bottom right
+    fn write_pixels(&self, pixels: &[&mut[Luma<u8>]]) {
+        const fn value_map(p: u8) -> Luma<u8> {
+            match p {
+                0 => [0],
+                1 => [u8::MAX / 4],
+                2 => [u8::MAX / 2],
+                _ => [u8::MAX / 4 *3],
+            }
+        }
+
+        for i in 0..8 {
+            for j in 0..8 {
+                pixels[i][j] = value_map(self.get_pixel((i,j)));
+            }
+        }
+    }
+}
+
+struct NameTable<'a> {
+    tables: &'a [PatternTable<'a>; 960],
+    attribute: &'a [Attribute; 64],
+}
+
+struct Attribute(u8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PPUStatus(u8);
@@ -47,8 +89,10 @@ pub struct PPU {
     ppu_status: PPUStatus,
     spr_ram_address: u8,
     vram_address: u16,
-    // allow mutability on reads of PPU through non-mutable reference
-    // this is purely interior state, a reference to this data should never shared
+    // Allow mutability on reads of PPU through non-mutable reference.
+    // This is purely interior state, a reference to this data should never shared.
+    // Modifying this data through a non-mutable reference won't panic as long
+    // as a reference to this data is never shared.
     byte_shift: RefCell<u8>,
     x_scroll: u8,
     y_scroll: u8
@@ -121,4 +165,14 @@ impl PPU {
     }
 
     pub fn ignore(&mut self, _data: u8) {}
+}
+
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "image")]
+    #[test]
+    fn generate_pattern_table_image() {
+
+    }
 }

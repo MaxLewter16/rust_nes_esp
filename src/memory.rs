@@ -83,7 +83,7 @@ pub struct Memory {
     */
     active_program_1: NonNull<RAM>,
     active_program_2: NonNull<RAM>,
-    // because Memory is contains pointers to itself it can't be moved
+    // because Memory contains pointers to itself it can't be moved
     _phantom_pin: PhantomPinned,
     ram: [u8; (MMIO - BUILTIN_RAM) as usize],
     battery_ram: Option<RAM>,
