@@ -180,6 +180,8 @@ impl Memory {
             return Err(NesError::FileFormat("incorrect identifying bytes, not a .nes file?"))
         };
 
+        if (header[7] & 4) > 0 && (!header[7] & 2) > 0 {return Err(NesError::FileFormat("NES2.0 format unsupported"))}
+
         let prg_rom_count = header[4];
         let vrom_count = header[5];
         let rom_control = &header[6..8];
