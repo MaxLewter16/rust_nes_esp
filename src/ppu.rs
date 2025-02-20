@@ -3,11 +3,12 @@ use crate::memory::{MMIO, RAM};
 use bitflags::{bitflags, Flags};
 use std::{cell::RefCell, u8};
 #[cfg(feature = "image")]
-use image::{GrayImage};
+use image::{GrayImage, RgbImage};
 
 const VRAM_SIZE: u16 = 16 * (1 << 10);
 const SPRAM_SIZE: u16 = 1 << 8;
 const PATTERN_TABLE_SIZE: usize = 1 << 12;
+const PALETTE: [[u8; 3]; 64] = [[0; 3]; 64];
 
 struct PatternTable<'a> {
     data: &'a [u8; 16],
@@ -21,11 +22,18 @@ impl PatternTable<'_> {
 
     // writes pixels where pixels[0][0] is the upper left and pixels[15][15] is bottom right
     // *NOTE: scales pixel value for a greyscale image
-    fn write_pixels(&self, pixels: &mut[[u8; 8]]) {
+    fn write_greyscale_pixels(&self, pixels: &mut[[u8; 8]]) {
         for i in 0..8 {
             for j in 0..8 {
                 pixels[i][j] = self.get_pixel((i,j)) * 64;
             }
+        }
+    }
+
+    fn write_rgb_row(&self, pixels: &mut[u8], row: usize, upper_bits: u8) {
+        let mut pixels_view = pixels.chunks_mut(3);
+        for j in 0..8 {
+            pixels_view.next().unwrap().copy_from_slice(&PALETTE[(upper_bits | self.get_pixel((row,j))) as usize]);
         }
     }
 
@@ -39,7 +47,7 @@ impl PatternTable<'_> {
         let mut image_view: Vec<&mut [u8]> = image.chunks_mut(8).collect();
         let mut pixel_tmp = [[0u8; 8]; 8];
         for (id, pattern_table) in pattern_tables.chunks(16).map(|s| PatternTable{data: s.try_into().expect("")}).enumerate(){
-            pattern_table.write_pixels(&mut pixel_tmp);
+            pattern_table.write_greyscale_pixels(&mut pixel_tmp);
             // 16 tiles per row
             // 8 rows per tile layer
             for row in 0..8 {image_view[(id/16)*128 + id%16 + row*16].copy_from_slice(&pixel_tmp[row])}
@@ -49,11 +57,38 @@ impl PatternTable<'_> {
 }
 
 struct NameTable<'a> {
-    tables: &'a [PatternTable<'a>; 960],
+    table_ids: &'a [u8; 960],
     attribute: &'a [Attribute; 64],
 }
 
 struct Attribute(u8);
+
+
+impl NameTable<'_> {
+
+    // buf should be (32 * 8) * (30 * 8) * 3 = 184320 = 45*2^12 bytes
+    // this is equivalent to a 256*240 RgbImage
+    fn get_frame(&self, tables: &[PatternTable], buf: &mut[u8]) {
+        const FRAME_WIDTH: usize = 256;
+        const FRAME_HEIGHT: usize = 240;
+
+        //each chunk is one row of pixels in a pattern
+        let mut table_row_pixels = buf.chunks_mut(8*3);
+        for row in self.table_ids.chunks(32) {
+            for row_pixels in 0..8 {
+                for address in row.iter() {
+                    let attribute_byte = self.attribute[((*address % 32) / 4 + (*address / 128) * 8) as usize].0;
+                    let shift_amnt = ((*address % 4) / 2) | (((*address / 32) % 2) << 1);
+                    tables[*address as usize].write_rgb_row(
+                        table_row_pixels.next().unwrap(),
+                        row_pixels,
+                        (attribute_byte >> (3 - shift_amnt) & 0x3) << 2
+                        );
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PPUStatus(u8);
