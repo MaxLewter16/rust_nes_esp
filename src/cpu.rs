@@ -270,6 +270,12 @@ impl CPU {
         self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]);
     }
 
+    pub fn asl_a(&mut self) {
+        self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >> 7 == 1);
+        self.accumulator <<= 1;
+        self.update_negative_zero_flags(self.accumulator);
+    }
+
     #[inline]
     // set NEGATIVE flag if 'test' is negative, reset otherwise
     // set ZERO flag if 'test' is zero, reset otherwise
@@ -601,6 +607,35 @@ inc_dec_mem_gen!(dec_absolute, CPU::get_absolute, -);
 inc_dec_mem_gen!(dec_absolute_x, CPU::get_absolute_x, -);
 inc_dec_mem_gen!(dec_zero_page, CPU::get_zero_page, -);
 inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, -);
+
+/*
+    Arithmetic Left Shift
+    ASL shifts all of the bits of a memory value or the accumulator one position to the left, moving the value of each bit into the next bit. 
+    Bit 7 is shifted into the carry flag, and 0 is shifted into bit 0. 
+    This is equivalent to multiplying an unsigned value by 2, with carry indicating overflow.
+*/
+
+macro_rules! arithmetic_left_shift_gen {
+    ($name:ident, $addr_mode:path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                // Get the address using the provided addressing mode
+                let address = $addr_mode(self);
+                let mut data = self.memory[address];
+                // Assign carry bit based on top bit of data
+                self.processor_status.set(ProcessorStatusFlags::CARRY, data >> 7 == 1);
+                data <<= 1;
+                self.memory.write(address, data);
+                self.update_negative_zero_flags(data);
+            }
+        }
+    };
+}
+arithmetic_left_shift_gen!(asl_zero_page, CPU::get_zero_page);
+arithmetic_left_shift_gen!(asl_zero_page_x, CPU::get_zero_page_x);
+arithmetic_left_shift_gen!(asl_absolute, CPU::get_absolute);
+arithmetic_left_shift_gen!(asl_absolute_x, CPU::get_absolute_x);
+
 
 
 mod tests {

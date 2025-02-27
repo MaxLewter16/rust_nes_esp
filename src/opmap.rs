@@ -139,6 +139,13 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x20] = CPU::jump_subroutine;
     map[0x60] = CPU::return_from_subroutine;
 
+    // 'Arithmetic Shift Left' instructions
+    map[0x0E] = CPU::asl_absolute;
+    map[0x1E] = CPU::asl_absolute_x;
+    map[0x06] = CPU::asl_zero_page;
+    map[0x16] = CPU::asl_zero_page_x;
+    map[0x0A] = CPU::asl_a;
+
 
     map
 };
