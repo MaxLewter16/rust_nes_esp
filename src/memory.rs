@@ -48,6 +48,26 @@ impl RAM {
         Self{file: Box::new([0u8; S]), start_address: start}
     }
 
+    /// Return Some(RAM) if space can be allocated, otherwise None.
+    /// Return None if size is 0
+    pub fn new_dyn(size: usize, start: u16) -> Option<Self> {
+        if size == 0 {return None}
+        // this unsafe block does the equivalent of Box::new_zeroed_slice().assume_init()
+        /*
+            This is safe because:
+                - The box allocator and the allocator used to allocate the slice match
+                - The u8 primitive type has an allignment of 1, and [u8] has the same allignment
+                - '0' is a valid value for integer types
+                - size is non-zero
+         */
+        let zeroed_mem = unsafe {
+            let slice_alloc = std::alloc::alloc_zeroed(std::alloc::Layout::from_size_align(size_of::<u8>() * size, 1).expect(""));
+            if slice_alloc.is_null() {return None}
+            Box::from_raw(std::slice::from_raw_parts_mut(slice_alloc,size) as *mut [u8])
+        };
+        Some(Self{file: zeroed_mem, start_address: start})
+    }
+
     // *Note: Deref<Target = [u8]> is not implemented because indexing is different
     // *from a typical slice
     pub fn as_slice(&self) -> &[u8] {
@@ -180,7 +200,7 @@ impl Memory {
             return Err(NesError::FileFormat("incorrect identifying bytes, not a .nes file?"))
         };
 
-        if (header[7] & 4) > 0 && (!header[7] & 2) > 0 {return Err(NesError::FileFormat("NES2.0 format unsupported"))}
+        if (header[7] & 0x0c) == 0x08 {eprintln!("Warning: NES2.0 file format unsupported")}
 
         let prg_rom_count = header[4];
         let vrom_count = header[5];

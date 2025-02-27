@@ -244,9 +244,9 @@ impl CPU {
         let status_retain = self.pop_stack();
         self.processor_status = ProcessorStatusFlags::from_bits_retain(status_retain);
 
-        let lower_pc = self.pop_stack();
         let upper_pc = self.pop_stack();
-        self.program_counter = u16::from_le_bytes([upper_pc, lower_pc]);
+        let lower_pc = self.pop_stack();
+        self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]);
     }
 
     pub fn jump_absolute(&mut self) {
@@ -265,9 +265,9 @@ impl CPU {
     }
 
     pub fn return_from_subroutine(&mut self) {
-        let lower_pc = self.pop_stack();
         let upper_pc = self.pop_stack();
-        self.program_counter = u16::from_le_bytes([upper_pc, lower_pc]);
+        let lower_pc = self.pop_stack();
+        self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]);
     }
 
     #[inline]
