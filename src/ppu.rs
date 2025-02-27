@@ -15,9 +15,14 @@ struct PatternTable<'a> {
 }
 
 impl PatternTable<'_> {
+    // Returns a value between 0-3 for an 8x8 grid of pixels
     fn get_pixel(&self, idx: (usize, usize)) -> u8 {
         let (i, j) = idx;
-        ((self.data[i] >> (7 - j)) & 1) | (((self.data[i + 8] >> (7 - j)) & 1) << 1)
+        // Getting the 7-j bit of the ith data
+        let low_bit = (self.data[i] >> (7 - j)) & 1;
+        // Getting the ith + 8 data shifted 7-j bits
+        let high_bit = (self.data[i + 8] >> (7 - j)) & 1;
+        low_bit | ( high_bit <<  1 )
     }
 
     // writes pixels where pixels[0][0] is the upper left and pixels[15][15] is bottom right
@@ -25,7 +30,7 @@ impl PatternTable<'_> {
     fn write_greyscale_pixels(&self, pixels: &mut[[u8; 8]]) {
         for i in 0..8 {
             for j in 0..8 {
-                pixels[i][j] = self.get_pixel((i,j)) * 64;
+                pixels[i][j] = self.get_pixel((i,j)) << 7;
             }
         }
     }

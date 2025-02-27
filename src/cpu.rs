@@ -187,6 +187,18 @@ impl CPU {
         self.stack_pointer as u16 + STACK_OFFSET
     }
 
+    #[inline(always)]
+    fn push_stack(&mut self, data: u8) {
+        self.memory.write(self.get_stack(), data);
+        self.stack_pointer -= 1;
+    }
+
+    #[inline(always)]
+    fn pop_stack(&mut self) -> u8 {
+        self.stack_pointer += 1;
+        self.memory[self.get_stack()]
+    }
+
     pub fn noop(&mut self) {}
 
     pub fn transfer_x_sp(&mut self) {
@@ -200,42 +212,41 @@ impl CPU {
     }
 
     pub fn push_a(&mut self) {
-        self.memory.write(self.stack_pointer as u16 + STACK_OFFSET, self.accumulator);
-        self.stack_pointer -= 1;
+        self.push_stack(self.accumulator);
     }
 
     pub fn push_status(&mut self) {
-        self.memory.write(self.stack_pointer as u16 + STACK_OFFSET, self.processor_status.bits());
-        self.stack_pointer -= 1;
+        self.push_stack(self.processor_status.bits());
     }
 
     pub fn pull_a(&mut self) {
-        self.stack_pointer += 1;
-        self.accumulator = self.memory[self.stack_pointer as u16 + STACK_OFFSET];
+        self.accumulator = self.pop_stack();
         self.update_negative_zero_flags(self.accumulator);
     }
 
     pub fn pull_status(&mut self) {
-        self.stack_pointer += 1;
-        self.processor_status = ProcessorStatusFlags::from_bits_retain(self.memory[self.stack_pointer as u16 + STACK_OFFSET]);
+        let top = self.pop_stack();
+        self.processor_status = ProcessorStatusFlags::from_bits_retain(top);
     }
 
     pub fn break_instr(&mut self) {
         if self.processor_status.contains(ProcessorStatusFlags::INTERRUPT) {
             let pc = self.program_counter.to_le_bytes();
-            self.memory.write(self.get_stack() - 0, pc[0]);
-            self.memory.write(self.get_stack() - 1,  pc[1]);
-            self.memory.write(self.get_stack() - 2, self.processor_status.bits());
+            self.push_stack(pc[0]);
+            self.push_stack(pc[1]);
+            self.push_stack(self.processor_status.bits());
             self.processor_status &= !ProcessorStatusFlags::INTERRUPT;
-            self.stack_pointer -= 3;
             self.program_counter = u16::from_le_bytes([self.memory[0xfffe], self.memory[0xffff]]);
         }
     }
 
     pub fn return_from_interrupt(&mut self) {
-        self.processor_status = ProcessorStatusFlags::from_bits_retain(self.memory[self.get_stack() + 1]);
-        self.program_counter = u16::from_le_bytes([self.memory[self.get_stack() + 3], self.memory[self.get_stack() + 2]]);
-        self.stack_pointer += 3;
+        let status_retain = self.pop_stack();
+        self.processor_status = ProcessorStatusFlags::from_bits_retain(status_retain);
+
+        let lower_pc = self.pop_stack();
+        let upper_pc = self.pop_stack();
+        self.program_counter = u16::from_le_bytes([upper_pc, lower_pc]);
     }
 
     pub fn jump_absolute(&mut self) {
@@ -248,15 +259,15 @@ impl CPU {
 
     pub fn jump_subroutine(&mut self) {
         let pc = (self.program_counter + 1).to_le_bytes();
-        self.memory.write(self.get_stack() - 0, pc[0]);
-        self.memory.write(self.get_stack() - 1,  pc[1]);
-        self.stack_pointer -= 2;
+        self.push_stack(pc[0]);
+        self.push_stack(pc[1]);
         self.program_counter = self.get_absolute();
     }
 
     pub fn return_from_subroutine(&mut self) {
-        self.program_counter = u16::from_le_bytes([self.memory[self.get_stack() + 2], self.memory[self.get_stack() + 1]]) + 1;
-        self.stack_pointer += 2;
+        let lower_pc = self.pop_stack();
+        let upper_pc = self.pop_stack();
+        self.program_counter = u16::from_le_bytes([upper_pc, lower_pc]);
     }
 
     #[inline]
