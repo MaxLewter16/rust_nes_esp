@@ -1037,4 +1037,38 @@ mod tests {
         cpu.execute(Some(3));
         assert!(0 == cpu.memory[0] && 0 == cpu.idx_register_x && 0 == cpu.idx_register_y);
     }
+    #[test]
+    fn test_asl_abs_no_carry() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0x7F, // A = 7F = 01111111
+            0x85, 0x50, // STA 0x50
+            0x0E, 0x50, 0x00, // ASL Absolute 0x0050
+            ]);
+            cpu.execute(Some(3));
+            assert_eq!(cpu.memory[0x50], 0b11111110);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
+    }
+    #[test]
+    fn test_asl_abs_carry() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0xFF, // A = FF = 11111111
+            0x85, 0x50, // STA 0x50
+            0x0E, 0x50, 0x00, // ASL Absolute 0x0050
+            ]);
+            cpu.execute(Some(3));
+            assert_eq!(cpu.memory[0x50], 0b11111110);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
+    }
+    #[test]
+    fn test_asl_a() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0xFF, // A = FF = 11111111
+            0x0A // ASL A
+            ]);
+            cpu.execute(Some(3));
+            assert_eq!(cpu.accumulator, 0b11111110);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
+    }
+
+
 }
