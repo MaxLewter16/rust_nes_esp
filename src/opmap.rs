@@ -146,6 +146,13 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x16] = CPU::asl_zero_page_x;
     map[0x0A] = CPU::asl_a;
 
+    // 'Logical Shift Right' instructions
+    map[0x4E] = CPU::lsr_absolute;
+    map[0x5E] = CPU::lsr_absolute_x;
+    map[0x46] = CPU::lsr_zero_page;
+    map[0x56] = CPU::lsr_zero_page_x;
+    map[0x4A] = CPU::lsr_a;
+
 
     map
 };

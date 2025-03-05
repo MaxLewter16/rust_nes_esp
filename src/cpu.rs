@@ -276,6 +276,12 @@ impl CPU {
         self.update_negative_zero_flags(self.accumulator);
     }
 
+    pub fn lsr_a(&mut self) {
+        self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator & 1 == 1);
+        self.accumulator >>= 1;
+        self.update_negative_zero_flags(self.accumulator);
+    }
+
     #[inline]
     // set NEGATIVE flag if 'test' is negative, reset otherwise
     // set ZERO flag if 'test' is zero, reset otherwise
@@ -615,7 +621,7 @@ inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, -);
     This is equivalent to multiplying an unsigned value by 2, with carry indicating overflow.
 */
 
-macro_rules! arithmetic_left_shift_gen {
+macro_rules! logical_shift_right_gen {
     ($name:ident, $addr_mode:path) => {
         impl CPU {
             pub fn $name(&mut self) {
@@ -631,11 +637,31 @@ macro_rules! arithmetic_left_shift_gen {
         }
     };
 }
-arithmetic_left_shift_gen!(asl_zero_page, CPU::get_zero_page);
-arithmetic_left_shift_gen!(asl_zero_page_x, CPU::get_zero_page_x);
-arithmetic_left_shift_gen!(asl_absolute, CPU::get_absolute);
-arithmetic_left_shift_gen!(asl_absolute_x, CPU::get_absolute_x);
+logical_shift_right_gen!(asl_zero_page, CPU::get_zero_page);
+logical_shift_right_gen!(asl_zero_page_x, CPU::get_zero_page_x);
+logical_shift_right_gen!(asl_absolute, CPU::get_absolute);
+logical_shift_right_gen!(asl_absolute_x, CPU::get_absolute_x);
 
+macro_rules! logical_shift_right_gen {
+    ($name:ident, $addr_mode:path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                // Get the address using the provided addressing mode
+                let address = $addr_mode(self);
+                let mut data = self.memory[address];
+                // Assign carry bit based on 0th bit of data
+                self.processor_status.set(ProcessorStatusFlags::CARRY, data & 1 == 1);
+                data >>= 1;
+                self.memory.write(address, data);
+                self.update_negative_zero_flags(data); // Negative flag should always be clear
+            }
+        }
+    };
+}
+logical_shift_right_gen!(lsr_zero_page, CPU::get_zero_page);
+logical_shift_right_gen!(lsr_zero_page_x, CPU::get_zero_page_x);
+logical_shift_right_gen!(lsr_absolute, CPU::get_absolute);
+logical_shift_right_gen!(lsr_absolute_x, CPU::get_absolute_x);
 
 
 mod tests {
@@ -1037,6 +1063,9 @@ mod tests {
         cpu.execute(Some(3));
         assert!(0 == cpu.memory[0] && 0 == cpu.idx_register_x && 0 == cpu.idx_register_y);
     }
+
+    // test asl instructions
+
     #[test]
     fn test_asl_abs_no_carry() {
         let mut cpu = CPU::with_program(vec![
@@ -1065,10 +1094,42 @@ mod tests {
             0xa9, 0xFF, // A = FF = 11111111
             0x0A // ASL A
             ]);
-            cpu.execute(Some(3));
+            cpu.execute(Some(2));
             assert_eq!(cpu.accumulator, 0b11111110);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
     }
 
-
+    // test lsr instructions
+    #[test]
+    fn test_lsr_abs_carry() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0x7F, // A = 7F = 01111111
+            0x85, 0x50, // STA 0x50
+            0x4E, 0x50, 0x00, // lsr Absolute 0x0050
+            ]);
+            cpu.execute(Some(3));
+            assert_eq!(cpu.memory[0x50], 0b00111111);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
+    }
+    #[test]
+    fn test_lsr_abs_no_carry() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0xFE, // A = FF = 11111110
+            0x85, 0x50, // STA 0x50
+            0x4E, 0x50, 0x00, // lsr Absolute 0x0050
+            ]);
+            cpu.execute(Some(3));
+            assert_eq!(cpu.memory[0x50], 0b01111111);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
+    }
+    #[test]
+    fn test_lsr_a() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0xFF, // A = FF = 11111111
+            0x4A // lsr A
+            ]);
+            cpu.execute(Some(2));
+            assert_eq!(cpu.accumulator, 0b01111111);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
+    }
 }
