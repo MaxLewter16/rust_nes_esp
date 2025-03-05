@@ -160,6 +160,13 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x76] = CPU::ror_zero_page_x;
     map[0x6A] = CPU::ror_a;
 
+    // 'Rotate Left' instructions
+    map[0x2E] = CPU::rol_absolute;
+    map[0x3E] = CPU::rol_absolute_x;
+    map[0x26] = CPU::rol_zero_page;
+    map[0x36] = CPU::rol_zero_page_x;
+    map[0x2A] = CPU::rol_a;
+
 
     map
 };

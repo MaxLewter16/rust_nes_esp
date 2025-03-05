@@ -294,6 +294,14 @@ impl CPU {
         self.accumulator = (self.accumulator >> 1) | (top_bit << 7);                 
         self.update_negative_zero_flags(self.accumulator);
     }
+    pub fn rol_a(&mut self) {
+        // carry bit becomes bottom bit
+        let bottom_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
+        // Assign carry bit based on bit 7
+        self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >> 7 == 1);
+        // new value is rotated to the left and the bottom bit is set to the carry bit
+        self.accumulator = (self.accumulator << 1) | bottom_bit;                 
+    }
 
     #[inline]
     // set NEGATIVE flag if 'test' is negative, reset otherwise
@@ -634,7 +642,7 @@ inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, -);
     This is equivalent to multiplying an unsigned value by 2, with carry indicating overflow.
 */
 
-macro_rules! logical_shift_right_gen {
+macro_rules! arithmetic_left_shift_gen {
     ($name:ident, $addr_mode:path) => {
         impl CPU {
             pub fn $name(&mut self) {
@@ -650,10 +658,40 @@ macro_rules! logical_shift_right_gen {
         }
     };
 }
-logical_shift_right_gen!(asl_zero_page, CPU::get_zero_page);
-logical_shift_right_gen!(asl_zero_page_x, CPU::get_zero_page_x);
-logical_shift_right_gen!(asl_absolute, CPU::get_absolute);
-logical_shift_right_gen!(asl_absolute_x, CPU::get_absolute_x);
+arithmetic_left_shift_gen!(asl_zero_page, CPU::get_zero_page);
+arithmetic_left_shift_gen!(asl_zero_page_x, CPU::get_zero_page_x);
+arithmetic_left_shift_gen!(asl_absolute, CPU::get_absolute);
+arithmetic_left_shift_gen!(asl_absolute_x, CPU::get_absolute_x);
+
+/*
+    Rotate Left
+    shifts a memory value or the accumulator to the left, moving the value of each bit into the next bit and treating the carry flag as though it is both above bit 7 and below bit 0. 
+    Specifically, the value in carry is shifted into bit 0, and bit 7 is shifted into carry. Rotating left 9 times simply returns the value and carry back to their original state.
+*/
+macro_rules! rotate_left_gen {
+    ($name:ident, $addr_mode:path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                // Get the address using the provided addressing mode
+                let address = $addr_mode(self);
+                let mut data = self.memory[address];
+                // carry bit becomes bottom bit
+                let bottom_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
+                // Assign carry bit based on bit 7
+                self.processor_status.set(ProcessorStatusFlags::CARRY, data >> 7 == 1);
+                // new value is rotated to the left and the bottom bit is set to the carry bit
+                data = (data << 1) | bottom_bit;                 
+                self.memory.write(address, data);
+                self.update_negative_zero_flags(data); // Negative flag should always be clear
+            }
+        }
+    };
+}
+rotate_left_gen!(rol_zero_page, CPU::get_zero_page);
+rotate_left_gen!(rol_zero_page_x, CPU::get_zero_page_x);
+rotate_left_gen!(rol_absolute, CPU::get_absolute);
+rotate_left_gen!(rol_absolute_x, CPU::get_absolute_x);
+
 
 macro_rules! logical_shift_right_gen {
     ($name:ident, $addr_mode:path) => {
@@ -1140,7 +1178,7 @@ mod tests {
     }
 
     // test lsr instructions
-    
+
     #[test]
     fn test_lsr_abs_carry() {
         let mut cpu = CPU::with_program(vec![
@@ -1206,6 +1244,43 @@ mod tests {
             0x38, // Set Carry
             0xa9, 0xFF, // A = FF = 11111111
             0x6A // ror A
+            ]);
+            cpu.execute(Some(3));
+            assert_eq!(cpu.accumulator, 0b11111111);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
+    }
+        // test rol instructions
+
+    #[test]
+    fn test_rol_abs_carry() {
+        let mut cpu = CPU::with_program(vec![
+            0x38, // Set Carry
+            0xa9, 0x7F, // A = 7F = 01111111
+            0x85, 0x50, // STA 0x50
+            0x2E, 0x50, 0x00, // rol Absolute 0x0050
+            ]);
+            cpu.execute(Some(4));
+            assert_eq!(cpu.memory[0x50], 0b11111111);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
+    }
+    #[test]
+    fn test_rol_abs_no_carry() {
+        let mut cpu = CPU::with_program(vec![
+            0x18, // Clear Carry
+            0xa9, 0xFE, // A = FF = 11111110
+            0x85, 0x50, // STA 0x50
+            0x2E, 0x50, 0x00, // rol Absolute 0x0050
+            ]);
+            cpu.execute(Some(4));
+            assert_eq!(cpu.memory[0x50], 0b11111100);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
+    }
+    #[test]
+    fn test_rol_a() {
+        let mut cpu = CPU::with_program(vec![
+            0x38, // Set Carry
+            0xa9, 0xFF, // A = FF = 11111111
+            0x2A // rol A
             ]);
             cpu.execute(Some(3));
             assert_eq!(cpu.accumulator, 0b11111111);
