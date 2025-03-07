@@ -167,6 +167,10 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x36] = CPU::rol_zero_page_x;
     map[0x2A] = CPU::rol_a;
 
+    // 'Bit Test' instructions
+    map[0x2C] = CPU::bit_absolute;
+    map[0x24] = CPU::bit_zero_page;
+
 
     map
 };

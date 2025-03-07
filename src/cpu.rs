@@ -270,21 +270,21 @@ impl CPU {
         self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]);
     }
 
-    // Arithmetic Shift Left Accumulator
+    // Arithmetic Shift Left Accumulator - see arithmetic_shift_left_gen for specifics
     pub fn asl_a(&mut self) {
         self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >> 7 == 1);
         self.accumulator <<= 1;
         self.update_negative_zero_flags(self.accumulator);
     }
 
-    // Logical Shift Right Accumulator
+    // Logical Shift Right Accumulator - see logical_shift_right_gen for specifics
     pub fn lsr_a(&mut self) {
         self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator & 1 == 1);
         self.accumulator >>= 1;
         self.update_negative_zero_flags(self.accumulator);
     }
 
-    // Rotate Right Accumulator
+    // Rotate Right Accumulator - see rotate_right_gen for specifics
     pub fn ror_a(&mut self) {
         // carry bit becomes top bit
         let top_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
@@ -294,6 +294,8 @@ impl CPU {
         self.accumulator = (self.accumulator >> 1) | (top_bit << 7);                 
         self.update_negative_zero_flags(self.accumulator);
     }
+
+    // Rotate Left Accumulator - See rotate_left_gen for specifics
     pub fn rol_a(&mut self) {
         // carry bit becomes bottom bit
         let bottom_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
@@ -741,6 +743,36 @@ rotate_right_gen!(ror_zero_page, CPU::get_zero_page);
 rotate_right_gen!(ror_zero_page_x, CPU::get_zero_page_x);
 rotate_right_gen!(ror_absolute, CPU::get_absolute);
 rotate_right_gen!(ror_absolute_x, CPU::get_absolute_x);
+
+/* 
+Bit Test- BIT modifies flags, but does not change memory or registers. The zero flag is set depending on the result of the accumulator AND memory value, 
+effectively applying a bitmask and then checking if any bits are set. Bits 7 and 6 of the memory value are loaded directly into the negative and overflow flags, 
+allowing them to be easily checked without having to load a mask into A.
+
+Because BIT only changes CPU flags, it is sometimes used to trigger the read side effects of a hardware register without clobbering any CPU registers, 
+or even to waste cycles as a 3-cycle NOP. As an advanced trick, it is occasionally used to hide a 1- or 2-byte instruction in its operand that is only executed 
+if jumped to directly, allowing two code paths to be interleaved. However, because the instruction in the operand is treated as an address from which to read, 
+this carries risk of triggering side effects if it reads a hardware register. This trick can be useful when working under tight constraints on space, time, or register usage.
+*/
+macro_rules! bit_test_gen {
+    ($name:ident, $addr_mode:path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = $addr_mode(self);
+                let data = self.memory[address];
+
+                // Set the NEGATIVE and OVERFLOW flags based on memory bits 7 and 6
+                self.processor_status.set(ProcessorStatusFlags::NEGATIVE, (data & ProcessorStatusFlags::NEGATIVE.bits()) != 0);
+                self.processor_status.set(ProcessorStatusFlags::OVERFLOW, (data & ProcessorStatusFlags::OVERFLOW.bits()) != 0);
+
+                // Zero flag is set if (A & memory) == 0
+                self.processor_status.set(ProcessorStatusFlags::ZERO, (self.accumulator & data) == 0);
+            }
+        }
+    };
+}
+bit_test_gen!(bit_absolute, CPU::get_absolute);
+bit_test_gen!(bit_zero_page, CPU::get_zero_page);
 
 mod tests {
     use super::*;
@@ -1286,4 +1318,36 @@ mod tests {
             assert_eq!(cpu.accumulator, 0b11111111);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
     }
+
+    // test bit test instructions
+    #[test]
+    fn test_bit_a() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0xFF, // A = FF = 11111111
+            0x8D, 0x50, 0x00, // store A at 0x0050
+            0xa9, 0x00, // A = 0
+            0x2C, 0x50, 0x00 //bit test A with 0x0050
+            ]);
+            cpu.execute(Some(4));
+            assert_eq!(cpu.accumulator, 0);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::ZERO), true);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::NEGATIVE), true);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::OVERFLOW), true);
+
+        }
+    #[test]
+    fn test_bit_a_no_flag() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0x3F, // A = FF = 00111111
+            0x8D, 0x50, 0x00, // store A at 0x0050
+            0xa9, 0x01, // A = 00000001
+            0x2C, 0x50, 0x00 //bit test A with 0x0050
+            ]);
+            cpu.execute(Some(4));
+            assert_eq!(cpu.accumulator, 1);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::ZERO), false);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::NEGATIVE), false);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::OVERFLOW), false);
+
+        }
 }
