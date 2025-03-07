@@ -774,6 +774,42 @@ macro_rules! bit_test_gen {
 bit_test_gen!(bit_absolute, CPU::get_absolute);
 bit_test_gen!(bit_zero_page, CPU::get_zero_page);
 
+/*
+Compare A: CMP compares A to a memory value, setting flags as appropriate but not modifying any registers. The comparison is implemented as a subtraction, 
+setting carry if there is no borrow, zero if the result is 0, and negative if the result is negative. 
+However, carry and zero are often most easily remembered as inequalities.
+*/
+
+macro_rules!  compare_a_gen{
+    ($name: ident, $addr_mode:path) => {
+        impl CPU{
+            pub fn $name(&mut self) {
+                let address = $addr_mode(self);
+                let data = self.memory[address];
+
+                let result = self.accumulator.wrapping_sub(data);
+
+                self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >= data);
+                self.processor_status.set(ProcessorStatusFlags::ZERO, self.accumulator == data);
+                self.processor_status.set(ProcessorStatusFlags::NEGATIVE, result & 0x80 != 0);
+
+            }
+        }
+        
+    };
+}
+compare_a_gen!(cmp_immediate, CPU::get_immediate);
+compare_a_gen!(cmp_absolute, CPU::get_absolute);
+compare_a_gen!(cmp_absolute_x, CPU::get_absolute_x);
+compare_a_gen!(cmp_absolute_y, CPU::get_absolute_y);
+compare_a_gen!(cmp_zero_page, CPU::get_zero_page);
+compare_a_gen!(cmp_zero_page_x, CPU::get_zero_page_x);
+compare_a_gen!(cmp_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
+compare_a_gen!(cmp_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+
+
+
+
 mod tests {
     use super::*;
 
@@ -1348,6 +1384,31 @@ mod tests {
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::ZERO), false);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::NEGATIVE), false);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::OVERFLOW), false);
+
+        }
+    
+    #[test]
+    fn test_cmp_a() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0x01, // A = 00000001
+            0xC9, 0x50, // store A at 0x0050
+            ]);
+            cpu.execute(Some(2));
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::ZERO), false);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::NEGATIVE), true);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
+
+        }
+    #[test]
+    fn test_cmp_a_carry() {
+        let mut cpu = CPU::with_program(vec![
+            0xa9, 0x51, // A = 00000001
+            0xC9, 0x50, // store A at 0x0050
+            ]);
+            cpu.execute(Some(2));
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::ZERO), false);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::NEGATIVE), false);
+            assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
 
         }
 }
