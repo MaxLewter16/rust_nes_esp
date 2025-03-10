@@ -457,6 +457,29 @@ or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
 
 /*
+    exclusive or instructions
+*/
+macro_rules! exclusive_or_gen {
+    ($name: ident, $p: path) => {
+        impl CPU {
+            pub fn $name(&mut self) {
+                let address = $p(self);
+                let data = self.memory[address];
+                self.accumulator ^= data;
+                self.update_negative_zero_flags(self.accumulator);
+            }
+        }
+    };
+}
+exclusive_or_gen!(exclusive_or_immediate, CPU::get_immediate);
+exclusive_or_gen!(exclusive_or_absolute, CPU::get_absolute);
+exclusive_or_gen!(exclusive_or_absolute_x, CPU::get_absolute_x);
+exclusive_or_gen!(exclusive_or_absolute_y, CPU::get_absolute_y);
+exclusive_or_gen!(exclusive_or_zero_page, CPU::get_zero_page);
+exclusive_or_gen!(exclusive_or_zero_page_x, CPU::get_zero_page_x);
+exclusive_or_gen!(exclusive_or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
+exclusive_or_gen!(exclusive_or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+/*
     and instructions
 */
 macro_rules! and_gen {
@@ -1093,6 +1116,15 @@ mod tests {
         0xA9, 0b00001010,   // LDA #0b00001010
         0x11, 0x10          // AND ($10), Y -> AND value at ($10) + Y
     ], 0b00000000, 0b10101010);
+
+    // test exclusive or
+    test_and_or_instruction!(test_exclusive_or, 3, 
+    [0x8D, 0x50,0x00, // STA 0x0050
+    0xA9, 0b11111111, // LDA 11111111
+    0x45, 0x50  // EOR A with 0x50
+    ],
+    0b10101010,
+    0b01010101);
     // Macro to test ADC instructions
     macro_rules! test_adc_instruction {
         ($name:ident, $num_programs:expr, $program:expr, $initial_a:expr, $expected_a:expr, $expected_flags:expr) => {
@@ -1397,7 +1429,7 @@ mod tests {
     fn test_cmp_a() {
         let mut cpu = CPU::with_program(vec![
             0xa9, 0x01, // A = 00000001
-            0xC9, 0x50, // store A at 0x0050
+            0xC9, 0x50, // compare a with 0x50
             ]);
             cpu.execute(Some(2));
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::ZERO), false);
@@ -1409,7 +1441,7 @@ mod tests {
     fn test_cmp_a_carry() {
         let mut cpu = CPU::with_program(vec![
             0xa9, 0x51, // A = 00000001
-            0xC9, 0x50, // store A at 0x0050
+            0xC9, 0x50, // compare a with 0x50
             ]);
             cpu.execute(Some(2));
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::ZERO), false);

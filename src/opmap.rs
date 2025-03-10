@@ -13,6 +13,16 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x01] = CPU::or_zero_page_x_indirect;
     map[0x11] = CPU::or_zero_page_y_indirect;
 
+    // 'exlusive or' instructions
+    map[0x49] = CPU::exclusive_or_immediate;
+    map[0x4D] = CPU::exclusive_or_absolute;
+    map[0x5D] = CPU::exclusive_or_absolute_x;
+    map[0x6D] = CPU::exclusive_or_absolute_y;
+    map[0x45] = CPU::exclusive_or_zero_page;
+    map[0x55] = CPU::exclusive_or_zero_page_x;
+    map[0x41] = CPU::exclusive_or_zero_page_x_indirect;
+    map[0x51] = CPU::exclusive_or_zero_page_y_indirect;
+
      //'and' instructions
     map[0x29] = CPU::and_immediate;
     map[0x2D] = CPU::and_absolute;
@@ -190,6 +200,11 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0xC0] = CPU::cpy_immediate;
     map[0xCC] = CPU::cpy_absolute;
     map[0xC4] = CPU::cpy_zero_page;
+
+    // 'No Operation' instruction
+    map[0xEA] = CPU::noop;
+
+
     
 
     map
