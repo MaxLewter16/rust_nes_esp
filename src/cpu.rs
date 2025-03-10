@@ -775,22 +775,22 @@ bit_test_gen!(bit_absolute, CPU::get_absolute);
 bit_test_gen!(bit_zero_page, CPU::get_zero_page);
 
 /*
-Compare A: CMP compares A to a memory value, setting flags as appropriate but not modifying any registers. The comparison is implemented as a subtraction, 
+Compare:compares a register to a memory value, setting flags as appropriate but not modifying any registers. The comparison is implemented as a subtraction, 
 setting carry if there is no borrow, zero if the result is 0, and negative if the result is negative. 
 However, carry and zero are often most easily remembered as inequalities.
 */
 
-macro_rules!  compare_a_gen{
-    ($name: ident, $addr_mode:path) => {
+macro_rules!  compare_gen{
+    ($name: ident, $register: ident, $addr_mode:path) => {
         impl CPU{
             pub fn $name(&mut self) {
                 let address = $addr_mode(self);
                 let data = self.memory[address];
 
-                let result = self.accumulator.wrapping_sub(data);
+                let result = self.$register.wrapping_sub(data);
 
-                self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >= data);
-                self.processor_status.set(ProcessorStatusFlags::ZERO, self.accumulator == data);
+                self.processor_status.set(ProcessorStatusFlags::CARRY, self.$register >= data);
+                self.processor_status.set(ProcessorStatusFlags::ZERO, self.$register == data);
                 self.processor_status.set(ProcessorStatusFlags::NEGATIVE, result & 0x80 != 0);
 
             }
@@ -798,14 +798,20 @@ macro_rules!  compare_a_gen{
         
     };
 }
-compare_a_gen!(cmp_immediate, CPU::get_immediate);
-compare_a_gen!(cmp_absolute, CPU::get_absolute);
-compare_a_gen!(cmp_absolute_x, CPU::get_absolute_x);
-compare_a_gen!(cmp_absolute_y, CPU::get_absolute_y);
-compare_a_gen!(cmp_zero_page, CPU::get_zero_page);
-compare_a_gen!(cmp_zero_page_x, CPU::get_zero_page_x);
-compare_a_gen!(cmp_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
-compare_a_gen!(cmp_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+compare_gen!(cmp_immediate, accumulator, CPU::get_immediate);
+compare_gen!(cmp_absolute, accumulator, CPU::get_absolute);
+compare_gen!(cmp_absolute_x, accumulator, CPU::get_absolute_x);
+compare_gen!(cmp_absolute_y, accumulator, CPU::get_absolute_y);
+compare_gen!(cmp_zero_page, accumulator, CPU::get_zero_page);
+compare_gen!(cmp_zero_page_x, accumulator, CPU::get_zero_page_x);
+compare_gen!(cmp_zero_page_x_indirect, accumulator, CPU::get_zero_page_x_indirect);
+compare_gen!(cmp_zero_page_y_indirect, accumulator, CPU::get_zero_page_y_indirect);
+compare_gen!(cpx_immediate, idx_register_x, CPU::get_immediate);
+compare_gen!(cpx_absolute, idx_register_x, CPU::get_absolute);
+compare_gen!(cpx_zero_page, idx_register_x, CPU::get_zero_page);
+compare_gen!(cpy_immediate, idx_register_y, CPU::get_immediate);
+compare_gen!(cpy_absolute, idx_register_y, CPU::get_absolute);
+compare_gen!(cpy_zero_page, idx_register_y, CPU::get_zero_page);
 
 
 

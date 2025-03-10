@@ -171,6 +171,7 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0x2C] = CPU::bit_absolute;
     map[0x24] = CPU::bit_zero_page;
 
+    // 'Compare A' instructions
     map[0xC9] = CPU::cmp_immediate;
     map[0xCD] = CPU::cmp_absolute;
     map[0xDD] = CPU::cmp_absolute_x;
@@ -179,6 +180,17 @@ pub const OP_MAP: [fn(&mut CPU) -> (); 256] = {
     map[0xD5] = CPU::cmp_zero_page_x;
     map[0xC1] = CPU::cmp_zero_page_x_indirect;
     map[0xD1] = CPU::cmp_zero_page_y_indirect;
+
+    // 'Compare X' instructions
+    map[0xE0] = CPU::cpx_immediate;
+    map[0xEC] = CPU::cpx_absolute;
+    map[0xE4] = CPU::cpx_zero_page;
+
+    // 'Compare Y' instructions
+    map[0xC0] = CPU::cpy_immediate;
+    map[0xCC] = CPU::cpy_absolute;
+    map[0xC4] = CPU::cpy_zero_page;
+    
 
     map
 };
