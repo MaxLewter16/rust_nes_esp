@@ -1,4 +1,4 @@
-use std::{io::{self, Read}, marker::PhantomPinned, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull, u16};
+use std::{io::{self, Read}, marker::PhantomPinned, ops::{Bound, Deref, DerefMut, Index, IndexMut, Range}, ptr::NonNull, u16};
 use std::result::Result;
 use crate::ppu::PPU;
 
@@ -92,6 +92,14 @@ impl IndexMut<u16> for RAM {
     }
 }
 
+impl Index<Range<u16> > for RAM {
+    type Output = [u8];
+
+    fn index(&self, index: Range<u16>) -> &Self::Output {
+        &self.file[(index.start - self.start_address) as usize .. (index.end - self.start_address) as usize]
+    }
+}
+
 enum ProgramROMDst {
     One,
     Two
@@ -100,7 +108,8 @@ enum ProgramROMDst {
 #[derive(Debug)]
 pub enum NesError {
     IO(io::Error),
-    FileFormat(&'static str)
+    FileFormat(&'static str),
+    Emulator(&'static str)
 }
 
 impl From<io::Error> for NesError {

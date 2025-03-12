@@ -1,5 +1,5 @@
 
-use crate::memory::{MMIO, RAM};
+use crate::memory::{NesError, MMIO, RAM};
 use bitflags::{bitflags, Flags};
 use std::{cell::RefCell, u8};
 #[cfg(feature = "image")]
@@ -8,7 +8,10 @@ use image::{GrayImage, RgbImage};
 const VRAM_SIZE: u16 = 16 * (1 << 10);
 const SPRAM_SIZE: u16 = 1 << 8;
 const PATTERN_TABLE_SIZE: usize = 1 << 12;
+const NAME_TABLE_SIZE: usize = 8 * 8 + 64;
 const PALETTE: [[u8; 3]; 64] = [[0; 3]; 64];
+const FRAME_WIDTH: usize = 256;
+const FRAME_HEIGHT: usize = 240;
 
 struct PatternTable<'a> {
     data: &'a [u8; 16],
@@ -61,28 +64,39 @@ impl PatternTable<'_> {
     }
 }
 
+impl<'a> From<&'a [u8]> for PatternTable<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        PatternTable { data: value.try_into().expect("") }
+    }
+}
+
 struct NameTable<'a> {
-    table_ids: &'a [u8; 960],
-    attribute: &'a [Attribute; 64],
+    table_ids: &'a [u8],
+    attribute: &'a [u8],
 }
 
 struct Attribute(u8);
 
+impl<'a> From<&'a [u8]> for NameTable<'a> {
+    fn from(value: &'a[u8]) -> Self {
+        let (table_ids, attribute) = value.split_at(961);
+        NameTable { table_ids, attribute}
+    }
+}
 
 impl NameTable<'_> {
 
     // buf should be (32 * 8) * (30 * 8) * 3 = 184320 = 45*2^12 bytes
     // this is equivalent to a 256*240 RgbImage
     fn get_frame(&self, tables: &[PatternTable], buf: &mut[u8]) {
-        const FRAME_WIDTH: usize = 256;
-        const FRAME_HEIGHT: usize = 240;
+
 
         //each chunk is one row of pixels in a pattern
         let mut table_row_pixels = buf.chunks_mut(8*3);
         for row in self.table_ids.chunks(32) {
             for row_pixels in 0..8 {
                 for address in row.iter() {
-                    let attribute_byte = self.attribute[((*address % 32) / 4 + (*address / 128) * 8) as usize].0;
+                    let attribute_byte = self.attribute[((*address % 32) / 4 + (*address / 128) * 8) as usize];
                     let shift_amnt = ((*address % 4) / 2) | (((*address / 32) % 2) << 1);
                     tables[*address as usize].write_rgb_row(
                         table_row_pixels.next().unwrap(),
@@ -92,6 +106,41 @@ impl NameTable<'_> {
                 }
             }
         }
+    }
+
+    // write 8 pixels to the image buffer,
+    // the pixels correspond to 'row' in the pattern at the 'address' in the given pattern table
+    fn write_tile_row(&self, pattern_id: u8, row: usize, pattern: &PatternTable, buf: &mut[u8]) {
+        // each attribute is split into 4 2-bit sections. Each section specifies the high color bits
+        // of a 2x2 pattern grid
+        let attribute_byte = self.attribute[((pattern_id % 32) / 4 + (pattern_id / 128) * 8) as usize];
+        let shift_amnt = ((pattern_id % 4) / 2) | (((pattern_id / 32) % 2) << 1);
+
+    }
+
+    #[inline]
+    fn map_pattern_to_attribute(&self, pattern: u8) -> u8 {
+        // each attribute is split into 4 sections of 2-bits. Each section specifies the high color bits
+        // of a 2x2 pattern grid.
+        // every 4 columns of patterns is another attribute byte
+        // every 4 rows of 32 patterns each is another row of attribute bytes
+        let attribute_byte = self.attribute[((pattern % 32) / 4 + (pattern / 128) * 8) as usize];
+        let shift_amnt = ((pattern % 4) / 2) | (((pattern / 32) % 2) << 1);
+        (attribute_byte >> (3 - shift_amnt)) & 0x3
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PPUState {
+    PreRender(usize),
+    VisibleLines(usize),
+    Vblank(usize)
+}
+
+impl PPUState {
+    fn get_cycles(&self) -> usize {
+        let (PPUState::PreRender(cycles) | PPUState::VisibleLines(cycles) | PPUState::Vblank(cycles)) = self;
+        *cycles
     }
 }
 
@@ -129,6 +178,7 @@ bitflags! {
 }
 
 pub struct PPU {
+    state: PPUState,
     vrom: Vec<RAM>,
     vram: RAM,
     sprite_ram: RAM,
@@ -149,6 +199,7 @@ pub struct PPU {
 impl PPU {
     pub fn new(vrom: Vec<RAM>) -> Self {
         let mut ppu = PPU{
+            state: PPUState::PreRender(0),
             vram: RAM::new::<{VRAM_SIZE as usize}>(0),
             vrom,
             sprite_ram: RAM::new::<{SPRAM_SIZE as usize}>(0),
@@ -231,6 +282,73 @@ impl PPU {
     }
 
     pub fn ignore(&mut self, _data: u8) {}
+
+    pub fn advance(&mut self, cycles: usize, buf: &mut [u8]) {
+        const CYCLES_SCANLINE: usize = 341;
+        const SCANLINES_VBLANK: usize = 20;
+        const SCANLINES_VISIBLE: usize = 240;
+        let mut next = self.state;
+        match self.state {
+            PPUState::PreRender(cycle) => {
+
+            },
+            //TODO: sprite rendering, missing states
+            PPUState::VisibleLines(cycle) => {
+                let mut next = cycle / 8 * 8;
+                // rendering has granularity of 8 pixels, so every 8 ppu cycles
+                // 8 pixels are rendered. This is an approximation of hardware.
+                let dest = (cycles + cycle) / 8 * 8;
+                while next < dest && next < SCANLINES_VISIBLE * CYCLES_SCANLINE {
+                    let name_table_address = (self.ppu_control_1 & PPUControl1::NameTableAddressMask).bits() as u16 * NAME_TABLE_SIZE as u16 + 0x2000;
+
+                    let pattern_idx = PPU::map_pixel_to_pattern(next);
+
+                    let name_table: NameTable = self.vram[name_table_address..name_table_address + NAME_TABLE_SIZE as u16].into();
+
+                    let pattern_address =
+                        (((self.ppu_control_1 & PPUControl1::BackgroundTable).bits() as u16) << 8) &
+                        ((name_table.table_ids[pattern_idx as usize] as u16) << 4);
+
+                    let pattern: PatternTable = self.vram[pattern_address..pattern_address + 16].into();
+
+                    pattern.write_rgb_row(
+                        buf,
+                        (next / FRAME_WIDTH) % 8,
+                        name_table.map_pattern_to_attribute(pattern_idx) << 2 //TODO: high bits controlled by PPUControl2
+                        );
+
+                    next += 8;
+                }
+
+                //PPU has rendered all visible scanlines
+                if dest > SCANLINES_VISIBLE * CYCLES_SCANLINE {
+                    self.state = PPUState::Vblank(0);
+                    self.advance(cycles + cycle - SCANLINES_VISIBLE, buf);
+                }
+                else {
+                    self.state = PPUState::VisibleLines(cycles + cycle);
+                }
+
+            },
+            PPUState::Vblank(cycle) => {
+                let next = cycle + cycles;
+                if cycle < 2 && next >= 2 {self.ppu_status |= PPUStatus::VBlankIndicator}
+                if next > SCANLINES_VBLANK * CYCLES_SCANLINE {
+                    self.state = PPUState::PreRender(0);
+                    self.advance(next - SCANLINES_VBLANK * CYCLES_SCANLINE, buf);
+                } else {
+                    self.state = PPUState::Vblank(next);
+                }
+            }
+        }
+    }
+
+    #[inline]
+    const fn map_pixel_to_pattern(pixel: usize) -> u8 {
+        // on average one pixel is rendered each cycle,
+        // Each row of pattern tables corresponds to 8 rows of pixels in a frame, and pattern table has 8 columns of pixels
+        ((pixel / (FRAME_WIDTH * 8))*8 + (pixel/FRAME_WIDTH) % 8) as u8
+    }
 }
 
 mod tests {
