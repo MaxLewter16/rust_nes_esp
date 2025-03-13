@@ -30,6 +30,7 @@ const MMIO_WRITE_MAP: [fn(&mut PPU, u8); 8] = {
     map
 };
 
+//map an address to an index in 'MMIO_WRITE_MAP' which handles mmio at the address
 const fn address_mmio_map(address: u16) -> usize {
     match address {
         0x2000..0x4000 => (address as usize - 0x2000) % 0x8,

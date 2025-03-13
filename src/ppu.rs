@@ -305,7 +305,7 @@ impl PPU {
         const PRE_FETCH_CYCLES: usize = 16;
         const OTHER_FETCH_CYCLES: usize = 4;
 
-        // ! TODO: odd cycle skip thing
+        // ! TODO: even/odd frame cycle skip thing
         // ! TODO: sprite rendering
         // ! TODO: sprite hit detection
         match self.state {
