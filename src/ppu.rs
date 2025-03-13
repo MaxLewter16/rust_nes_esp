@@ -133,16 +133,26 @@ impl NameTable<'_> {
 #[derive(Debug, Clone, Copy)]
 enum PPUState {
     PreRender(usize),
-    VisibleLines(usize),
-    Vblank(usize)
+    VisibleLines(usize, PPUScanLineState),
+    PostRender(usize),
+    Vblank(usize),
 }
 
-impl PPUState {
-    fn get_cycles(&self) -> usize {
-        let (PPUState::PreRender(cycles) | PPUState::VisibleLines(cycles) | PPUState::Vblank(cycles)) = self;
-        *cycles
-    }
+#[derive(Debug, Clone, Copy)]
+enum PPUScanLineState {
+    Idle(usize),
+    Render(usize),
+    SpriteFetch(usize),
+    PreFetch(usize),
+    OtherFetch(usize),
 }
+
+// impl PPUState {
+//     fn get_cycles(&self) -> usize {
+//         let (PPUState::PreRender(cycles) | PPUState::VisibleLines(cycles) | PPUState::Vblank(cycles)) = self;
+//         *cycles
+//     }
+// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PPUStatus(u8);
@@ -287,49 +297,103 @@ impl PPU {
         const CYCLES_SCANLINE: usize = 341;
         const SCANLINES_VBLANK: usize = 20;
         const SCANLINES_VISIBLE: usize = 240;
-        let mut next = self.state;
+        const SCANLINES_PRERENDER: usize = 1;
+        const SCANLINES_POSTRENDER: usize = 1;
+        const IDLE_CYCLES: usize = 1;
+        const RENDER_CYCLES: usize = 256;
+        const SPRITE_FETCH_CYCLES: usize = 64;
+        const PRE_FETCH_CYCLES: usize = 16;
+        const OTHER_FETCH_CYCLES: usize = 4;
+
+        // ! TODO: odd cycle skip thing
+        // ! TODO: sprite rendering
+        // ! TODO: sprite hit detection
         match self.state {
             PPUState::PreRender(cycle) => {
-
+                if cycle + cycles > SCANLINES_PRERENDER * CYCLES_SCANLINE {
+                    self.state = PPUState::VisibleLines(
+                        0,
+                        PPUScanLineState::Idle(0));
+                    self.advance(cycle + cycles - SCANLINES_PRERENDER * CYCLES_SCANLINE, buf);
+                } else {
+                    self.state = PPUState::PreRender(cycle + cycles);
+                }
             },
-            //TODO: sprite rendering, missing states
-            PPUState::VisibleLines(cycle) => {
-                let mut next = cycle / 8 * 8;
-                // rendering has granularity of 8 pixels, so every 8 ppu cycles
-                // 8 pixels are rendered. This is an approximation of hardware.
-                let dest = (cycles + cycle) / 8 * 8;
-                while next < dest && next < SCANLINES_VISIBLE * CYCLES_SCANLINE {
-                    let name_table_address = (self.ppu_control_1 & PPUControl1::NameTableAddressMask).bits() as u16 * NAME_TABLE_SIZE as u16 + 0x2000;
-
-                    let pattern_idx = PPU::map_pixel_to_pattern(next);
-
-                    let name_table: NameTable = self.vram[name_table_address..name_table_address + NAME_TABLE_SIZE as u16].into();
-
-                    let pattern_address =
-                        (((self.ppu_control_1 & PPUControl1::BackgroundTable).bits() as u16) << 8) &
-                        ((name_table.table_ids[pattern_idx as usize] as u16) << 4);
-
-                    let pattern: PatternTable = self.vram[pattern_address..pattern_address + 16].into();
-
-                    pattern.write_rgb_row(
-                        buf,
-                        (next / FRAME_WIDTH) % 8,
-                        name_table.map_pattern_to_attribute(pattern_idx) << 2 //TODO: high bits controlled by PPUControl2
-                        );
-
-                    next += 8;
+            PPUState::VisibleLines(line, line_state) => {
+                macro_rules! next_state {
+                    ($current: expr, $threshhold: expr, $stay: path, $next: path) => {
+                        if $current > $threshhold {
+                            self.state = PPUState::VisibleLines(line, $next(0));
+                            self.advance($current - $threshhold, buf);
+                        } else {
+                            self.state = PPUState::VisibleLines(line, $stay($current));
+                        }
+                    };
                 }
 
-                //PPU has rendered all visible scanlines
-                if dest > SCANLINES_VISIBLE * CYCLES_SCANLINE {
+                match line_state {
+                    PPUScanLineState::Idle(cycle) => {
+                        next_state!(cycle + cycles, IDLE_CYCLES, PPUScanLineState::Idle, PPUScanLineState::Render);
+                    }
+                    PPUScanLineState::Render(cycle) => {
+                        let mut next = cycle / 8 * 8;
+                        // rendering has granularity of 8 pixels, so every 8 ppu cycles
+                        // 8 pixels are rendered. This is an approximation of hardware.
+                        // this is to reduce memory accesses in software
+                        let dest = (cycles + cycle) / 8 * 8;
+                        while next < dest && next < RENDER_CYCLES {
+                            let name_table_address = (self.ppu_control_1 & PPUControl1::NameTableAddressMask).bits() as u16 * NAME_TABLE_SIZE as u16 + 0x2000;
+
+                            let pattern_idx = PPU::map_pixel_to_pattern(next);
+
+                            let name_table: NameTable = self.vram[name_table_address..name_table_address + NAME_TABLE_SIZE as u16].into();
+
+                            let pattern_address =
+                                (((self.ppu_control_1 & PPUControl1::BackgroundTable).bits() as u16) << 8) &
+                                ((name_table.table_ids[pattern_idx as usize] as u16) << 4);
+
+                            let pattern: PatternTable = self.vram[pattern_address..pattern_address + 16].into();
+
+                            pattern.write_rgb_row(
+                                buf,
+                                (next / FRAME_WIDTH) % 8,
+                                name_table.map_pattern_to_attribute(pattern_idx) << 2 //TODO: high bits controlled by PPUControl2
+                                );
+
+                            next += 8;
+                        }
+                        next_state!(cycle + cycles, RENDER_CYCLES, PPUScanLineState::Render, PPUScanLineState::SpriteFetch);
+                    }
+                    PPUScanLineState::SpriteFetch(cycle) => {
+                        next_state!(cycle + cycles, SPRITE_FETCH_CYCLES, PPUScanLineState::SpriteFetch, PPUScanLineState::OtherFetch);
+                    }
+                    PPUScanLineState::PreFetch(cycle) => {
+                        next_state!(cycle + cycles, PRE_FETCH_CYCLES, PPUScanLineState::PreFetch, PPUScanLineState::OtherFetch);
+                    }
+                    PPUScanLineState::OtherFetch(cycle) => {
+                        if cycle + cycles > OTHER_FETCH_CYCLES {
+                            if line + 1 >= SCANLINES_VISIBLE {
+                                self.state = PPUState::PostRender(0);
+                            } else {
+                                self.state = PPUState::VisibleLines(
+                                    line + 1,
+                                    PPUScanLineState::Idle(0));
+                            }
+                            self.advance(cycle + cycles - OTHER_FETCH_CYCLES, buf);
+                        } else {
+                            self.state = PPUState::VisibleLines(line, PPUScanLineState::OtherFetch(cycle + cycles));
+                        }
+                    }
+                }
+            },
+            PPUState::PostRender(cycle) => {
+                if cycle + cycles > SCANLINES_POSTRENDER * CYCLES_SCANLINE {
                     self.state = PPUState::Vblank(0);
-                    self.advance(cycles + cycle - SCANLINES_VISIBLE, buf);
+                    self.advance(cycle + cycles - SCANLINES_POSTRENDER * CYCLES_SCANLINE, buf);
+                } else {
+                    self.state = PPUState::PostRender(cycle + cycles);
                 }
-                else {
-                    self.state = PPUState::VisibleLines(cycles + cycle);
-                }
-
-            },
+            }
             PPUState::Vblank(cycle) => {
                 let next = cycle + cycles;
                 if cycle < 2 && next >= 2 {self.ppu_status |= PPUStatus::VBlankIndicator}
