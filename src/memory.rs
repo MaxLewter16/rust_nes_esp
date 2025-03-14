@@ -248,6 +248,68 @@ impl Memory {
             vrom.push(RAM{file: vrom_buf, start_address: 0})
         }
 
+        // by default load a single program rom which is mirrored (but its not mirroring right? Just copying into the same place?)
+        let active_program_1 = NonNull::new(&mut program[0]).unwrap();
+        let active_program_2 = NonNull::new(&mut program[0]).unwrap();
+
+        Ok(Memory{
+            program_rom: program,
+            active_program_1,
+            active_program_2,
+            ram: [0u8; (MMIO - BUILTIN_RAM) as usize],
+            battery_ram: battery_ram,
+            mapper: mapper_number,
+            ppu: PPU::new(vrom),
+            _phantom_pin: PhantomPinned
+        })
+    }
+
+    pub fn from_nestest_file(path: String) -> Result<Self, NesError> {
+        let mut file = std::fs::File::open(path)?;
+        let mut header = [0u8; 16];
+        if file.read(&mut header)? < 16 {return Err(NesError::FileFormat("file too short"))};
+        if header[0..4] != ['N' as u8, 'E' as u8, 'S' as u8, 0x1a] {
+            return Err(NesError::FileFormat("incorrect identifying bytes, not a .nes file?"))
+        };
+
+        if (header[7] & 0x0c) == 0x08 {eprintln!("Warning: NES2.0 file format unsupported")}
+
+        let prg_rom_count = header[4];
+        let vrom_count = header[5];
+        let rom_control = &header[6..8];
+        let ram_bank_count = header[8];
+
+        let mapper_number = (rom_control[1] & 0xf0) | (rom_control[0] >> 4);
+        let mirroring_type = (rom_control[0] & 1) != 0;
+        let battery_ram = (rom_control[0] & 2) != 0;
+        let trainer = (rom_control[0] & 4) != 0;
+        if !battery_ram && trainer {panic!("idx what happens in this case");}
+
+        let battery_ram = if battery_ram {
+            let mut ram = Box::new([0u8; BATTERY_RAM_SIZE as usize]);
+            if trainer {
+                file.read( &mut ram.as_mut_slice()[0x1000..0x1200])?;
+            }
+            Some(RAM{file: ram, start_address: BATTERY_RAM})
+        } else {
+            None
+        };
+
+        let mut program = Vec::new();
+        let mut vrom = Vec::new();
+        // Need to mirror, this is just
+        for _ in 0..prg_rom_count {
+            let mut prg_rom_buf = Box::new([0u8; PROGRAM_ROM_SIZE as usize]);
+            file.read_exact(prg_rom_buf.as_mut_slice())?;
+            program.push(RAM{file: prg_rom_buf, start_address: PROGRAM_ROM_2})
+        }
+
+        for _ in 0..vrom_count {
+            let mut vrom_buf = Box::new([0u8; VROM_SIZE as usize]);
+            file.read_exact(vrom_buf.as_mut_slice())?;
+            vrom.push(RAM{file: vrom_buf, start_address: 0})
+        }
+
         // by default load a single program rom which is mirrored
         let active_program_1 = NonNull::new(&mut program[0]).unwrap();
         let active_program_2 = NonNull::new(&mut program[0]).unwrap();
@@ -263,6 +325,7 @@ impl Memory {
             _phantom_pin: PhantomPinned
         })
     }
+
 
     fn mmio(&self, address: u16) -> &u8 {
         //TODO

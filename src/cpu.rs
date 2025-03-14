@@ -1,6 +1,8 @@
 use std::u16;
 use std::fmt;
 use bitflags::bitflags;
+use std::fs::File; // FOr testing NES File
+use std::io::Write;
 
 use crate::memory::{Memory, NesError, PROGRAM_ROM, MMIO};
 use crate::opmap::OP_MAP;
@@ -82,6 +84,17 @@ impl CPU {
             processor_status: ProcessorStatusFlags::from_bits_truncate(0b000000),
         })
     }
+    pub fn from_file_nestest(path: String) -> Result<Self, NesError> {
+        Ok(CPU {
+            memory: Memory::from_nestest_file(path)?,
+            program_counter: 0xC000, // Needed to initate logging
+            stack_pointer: STACK_RESET - 2, // Stack pointer starts at FD?
+            accumulator: 0,
+            idx_register_x: 0,
+            idx_register_y: 0,
+            processor_status: ProcessorStatusFlags::from_bits_truncate(0b100100),
+        })
+    }
 
     // pub fn new() -> Self {
     //     CPU {
@@ -94,6 +107,45 @@ impl CPU {
     //         accumulator: 0
     //     }
     // }
+
+    // Execute steps strictly for testing using nestest
+    pub fn execute_nestest(&mut self, steps: Option<usize>, output_log_path:&str) {
+        let mut log_file = File::create(output_log_path).expect("Failed to create log file");
+        if let Some(steps) = steps {
+            for step in 0..steps {
+                let opcode = self.memory[self.program_counter];
+
+                let log_entry = format!(
+                    "{:04X} {:02X} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}\n",
+                    self.program_counter,
+                    opcode,
+                    self.accumulator,
+                    self.idx_register_x,
+                    self.idx_register_y,
+                    self.processor_status.bits(),
+                    self.stack_pointer
+                );
+                log_file.write_all(log_entry.as_bytes()).expect("Failed to write log");
+
+                self.advance();
+            }
+        }
+        else { loop {
+            let opcode = self.memory[self.program_counter];
+
+            let log_entry = format!(
+                "{:04X} {:02X} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}\n",
+                self.program_counter,
+                opcode,
+                self.accumulator,
+                self.idx_register_x,
+                self.idx_register_y,
+                self.processor_status.bits(),
+                self.stack_pointer
+            );
+            log_file.write_all(log_entry.as_bytes()).expect("Failed to write log");
+            self.advance();} }
+    }
 
     //execute 'steps' instructions if steps is Some, otherwise run until program terminates
     pub fn execute(&mut self, steps: Option<usize>) {
