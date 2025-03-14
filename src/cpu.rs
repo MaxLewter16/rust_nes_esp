@@ -261,7 +261,7 @@ impl CPU {
     }
 
     pub fn push_status(&mut self) {
-        self.push_stack(self.processor_status.bits());
+        self.memory.write(self.stack_pointer as u16, self.processor_status.bits());
     }
 
     pub fn pull_a(&mut self) {
@@ -270,8 +270,7 @@ impl CPU {
     }
 
     pub fn pull_status(&mut self) {
-        let top = self.pop_stack();
-        self.processor_status = ProcessorStatusFlags::from_bits_retain(top);
+        self.processor_status = ProcessorStatusFlags::from_bits_retain(self.memory[self.stack_pointer as u16]);
     }
 
     pub fn break_instr(&mut self) {
