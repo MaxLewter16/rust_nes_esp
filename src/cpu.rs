@@ -261,7 +261,7 @@ impl CPU {
     }
 
     pub fn push_status(&mut self) {
-        self.memory.write(self.stack_pointer as u16, self.processor_status.bits());
+        self.push_stack(self.processor_status.bits());
     }
 
     pub fn pull_a(&mut self) {
@@ -269,23 +269,24 @@ impl CPU {
         self.update_negative_zero_flags(self.accumulator);
     }
 
+    // NOTE: minor inaccuracy: changes to the interrupt flag are delayed a cycle
     pub fn pull_status(&mut self) {
-        self.processor_status = ProcessorStatusFlags::from_bits_retain(self.memory[self.stack_pointer as u16]);
+        self.processor_status = ProcessorStatusFlags::from_bits_retain(self.pop_stack());
     }
 
     pub fn break_instr(&mut self) {
         if self.processor_status.contains(ProcessorStatusFlags::INTERRUPT) {
-            let pc = self.program_counter.to_le_bytes();
-            //NOTE: unclear whether the status or PC should be pushed onto the stack first
+            let pc = (self.program_counter + 1).to_le_bytes();
             self.push_stack(pc[1]);
             self.push_stack(pc[0]);
-            self.push_stack(self.processor_status.bits());
+            self.push_stack((self.processor_status | ProcessorStatusFlags::BREAK).bits());
             self.processor_status &= !ProcessorStatusFlags::INTERRUPT;
             self.program_counter = u16::from_le_bytes([self.memory[0xfffe], self.memory[0xffff]]);
         }
     }
 
     pub fn return_from_interrupt(&mut self) {
+        // this instruction does not effect the stack pointer
         let status_retain = self.pop_stack();
         self.processor_status = ProcessorStatusFlags::from_bits_retain(status_retain);
 

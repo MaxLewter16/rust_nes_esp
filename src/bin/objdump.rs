@@ -36,7 +36,7 @@ fn obj_dump(obj_dump: ObjDump) -> Result<(), NesError> {
         } else {
             String::from(OP_NAME_MAP[*instr as usize])
         };
-        println!("0x{:<8x}:{:}", idx + offset, instr_name);
+        println!("0x{:<8x}:(0x{:2x}){:}", idx + offset, *instr, instr_name);
     }
     Ok(())
 }
