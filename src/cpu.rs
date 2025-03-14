@@ -8,6 +8,8 @@ use std::io::Write;
 use crate::memory::{Memory, NesError, PROGRAM_ROM, MMIO};
 use crate::opmap::{OP_MAP, OP_NAME_MAP};
 
+const DEFAULT_LOG_FILE: &'static str = "test_data/nes_test_data/cpu_log.txt";
+
 // Primary Registers?
 const STACK_RESET: u8 = 0xff;
 const STACK_OFFSET: u16 = 0x0100;
@@ -130,10 +132,20 @@ impl CPU {
 
     //execute 'steps' instructions if steps is Some, otherwise run until program terminates
     pub fn execute(&mut self, steps: Option<usize>) {
+        #[cfg(feature = "logging")]
+        {let mut log_file = File::create(DEFAULT_LOG_FILE).expect("Failed to create log file");}
         if let Some(steps) = steps {
-            for _ in 0..steps {self.advance();}
+            for _ in 0..steps {
+                #[cfg(feature = "logging")]
+                {self.log_cpu(&mut log_file);}
+                self.advance();
+            }
         }
-        else { loop {self.advance();} }
+        else { loop {
+            #[cfg(feature = "logging")]
+            {self.log_cpu(&mut log_file);}
+            self.advance();
+        } }
     }
 
     fn advance(&mut self) {

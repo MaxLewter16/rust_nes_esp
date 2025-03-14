@@ -9,6 +9,7 @@ fn test_nes_execution(){
             return;  // Exit the program
         }
     };
-    cpu.execute_with_logging(Some(100), "test_data/nes_test_data/cpu_log2.txt");
-    println!("Test Result: 0x{:02X}: 0x{:02X}", cpu.memory[0x0002], cpu.memory[0x0003])
+    cpu.execute_with_logging(Some(0x4000), "test_data/nes_test_data/cpu_log.txt");
+    println!("Test Result: 0x{:02X}: 0x{:02X}", cpu.memory[0x0002], cpu.memory[0x0003]);
+    assert!(cpu.memory[0x0002] == 0);
 }

@@ -86,14 +86,14 @@ impl RAM {
 
 impl Index<u16> for RAM {
     type Output = u8;
-    fn index(&self, address: u16) -> &Self::Output {
-        &self.file[(address) as usize]
+    fn index(&self, index: u16) -> &Self::Output {
+        &self.file[(index) as usize]
     }
 }
 
 impl IndexMut<u16> for RAM {
-    fn index_mut(&mut self, address: u16) -> &mut Self::Output {
-        &mut self.file[(address) as usize]
+    fn index_mut(&mut self, index: u16) -> &mut Self::Output {
+        &mut self.file[(index) as usize]
     }
 }
 
@@ -105,9 +105,10 @@ impl Index<Range<u16> > for RAM {
     }
 }
 
-enum ProgramROMDst {
-    One,
-    Two
+impl IndexMut<Range<u16> > for RAM {
+    fn index_mut(&mut self, index: Range<u16>) -> &mut Self::Output {
+        &mut self.file[(index.start) as usize .. (index.end) as usize]
+    }
 }
 
 #[derive(Debug)]
@@ -176,19 +177,6 @@ impl Memory {
         }
     }
 
-    // pub fn set_active_ram(&mut self, src: usize, dst: ProgramROMDst) {
-    //     match dst {
-    //         ProgramROMDst::One => {
-    //             self.program_rom[src].start_address = PROGRAM_ROM;
-    //             self.active_program_1 = NonNull::new(&mut self.program_rom[src]).unwrap();
-    //         }
-    //         ProgramROMDst::Two => {
-    //             self.program_rom[src].start_address = PROGRAM_ROM_2;
-    //             self.active_program_2 = NonNull::new(&mut self.program_rom[src]).unwrap();
-    //         }
-    //     }
-    // }
-
     pub fn from_program(mut program: Vec<u8>) -> Self {
         program.resize(0x10000 - PROGRAM_ROM as usize, 0);
         let mut program = RAM{file: program.into_boxed_slice()};
@@ -240,7 +228,7 @@ impl Memory {
         let mut program = Vec::new();
         let mut vrom = Vec::new();
         // Need to mirror, this is just
-        
+
         for _ in 0..prg_rom_count {
             let mut prg_rom_buf = Box::new([0u8; PROGRAM_ROM_SIZE as usize]);
             file.read_exact(prg_rom_buf.as_mut_slice())?;
@@ -272,7 +260,7 @@ impl Memory {
             ppu: PPU::new(vrom),
             _phantom_pin: PhantomPinned
         })
-        
+
     }
 
     pub fn get_program_rom(&self, idx: usize) -> &RAM {
