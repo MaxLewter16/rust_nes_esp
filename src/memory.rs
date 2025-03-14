@@ -186,6 +186,10 @@ impl Memory {
         }
     }
 
+    pub fn get_program_rom(&self, idx: usize) -> &RAM {
+        return &self.program_rom[idx]
+    }
+
     pub fn set_active_ram(&mut self, src: usize, dst: ProgramROMDst) {
         match dst {
             ProgramROMDst::One => {
