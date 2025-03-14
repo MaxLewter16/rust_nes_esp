@@ -303,7 +303,7 @@ impl CPU {
     }
 
     pub fn jump_subroutine(&mut self) {
-        let pc = (self.program_counter + 1).to_le_bytes();
+        let pc = (self.program_counter + 2).to_le_bytes();
         self.push_stack(pc[0]);
         self.push_stack(pc[1]);
         self.program_counter = self.get_absolute();
