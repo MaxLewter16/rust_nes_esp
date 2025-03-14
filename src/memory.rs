@@ -40,18 +40,19 @@ const fn address_mmio_map(address: u16) -> usize {
 }
 
 pub struct RAM {
-    mem: Box<[u8]>,
+    file: Box<[u8]>,
 }
 
 impl RAM {
-    pub fn new<const S: usize>(start: u16) -> Self {
-        Self{mem: Box::new([0u8; S])}
+    pub fn new<const S: usize>() -> Self {
+        Self{file: Box::new([0u8; S])}
     }
 
     /// Return Some(RAM) if space can be allocated, otherwise None.
     /// Return None if size is 0
-    pub fn new_dyn(size: usize, start: u16) -> Option<Self> {
+    pub fn new_dyn(size: usize) -> Option<Self> {
         if size == 0 {return None}
+        // WHY Not use a Vec into a boxed slice?
         // this unsafe block does the equivalent of Box::new_zeroed_slice().assume_init()
         /*
             This is safe because:
@@ -65,53 +66,42 @@ impl RAM {
             if slice_alloc.is_null() {return None}
             Box::from_raw(std::slice::from_raw_parts_mut(slice_alloc,size) as *mut [u8])
         };
-        Some(Self{mem: zeroed_mem})
+        Some(Self{file: zeroed_mem})
     }
 
     // *Note: Deref<Target = [u8]> is not implemented because indexing is different
     // *from a typical slice
     pub fn as_slice(&self) -> &[u8] {
-        &self.mem
+        &self.file
     }
 
     pub fn as_slice_mut(&mut self) -> &mut[u8] {
-        &mut self.mem
+        &mut self.file
     }
-}
 
-impl Deref for RAM {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.mem
+    pub fn len(&self) -> usize {
+        self.file.len()
     }
 }
 
 impl Index<u16> for RAM {
     type Output = u8;
-
-    fn index(&self, index: u16) -> &Self::Output {
-        &self.mem[index as usize]
+    fn index(&self, address: u16) -> &Self::Output {
+        &self.file[(address) as usize]
     }
 }
 
 impl IndexMut<u16> for RAM {
-    fn index_mut(&mut self, index: u16) -> &mut Self::Output {
-        &mut self.mem[index as usize]
+    fn index_mut(&mut self, address: u16) -> &mut Self::Output {
+        &mut self.file[(address) as usize]
     }
 }
 
-impl Index<Range<u16>> for RAM {
+impl Index<Range<u16> > for RAM {
     type Output = [u8];
 
     fn index(&self, index: Range<u16>) -> &Self::Output {
-        &self.mem[index.start as usize .. index.end as usize]
-    }
-}
-
-impl IndexMut<Range<u16>> for RAM {
-    fn index_mut(&mut self, index: Range<u16>) -> &mut Self::Output {
-        &mut self.mem[index.start as usize .. index.end as usize]
+        &self.file[(index.start) as usize .. (index.end) as usize]
     }
 }
 
@@ -181,29 +171,27 @@ impl Memory {
                 ram[address - BATTERY_RAM] = data;
             } , // SRAM (not yet implemented)
             // TODO: writes to program rom are used to control memory mappers
-            PROGRAM_ROM..PROGRAM_ROM_2 => (),
-            PROGRAM_ROM_2..=u16::MAX => (),
+            PROGRAM_ROM..PROGRAM_ROM_2 => (), // Handle offset of start address
+            PROGRAM_ROM_2..=u16::MAX => (),// Handle offset of start address
         }
     }
 
-    pub fn get_program_rom(&self, idx: usize) -> &RAM {
-        return &self.program_rom[idx]
-    }
-
-    pub fn set_active_ram(&mut self, src: usize, dst: ProgramROMDst) {
-        match dst {
-            ProgramROMDst::One => {
-                self.active_program_1 = NonNull::new(&mut self.program_rom[src]).unwrap();
-            }
-            ProgramROMDst::Two => {
-                self.active_program_2 = NonNull::new(&mut self.program_rom[src]).unwrap();
-            }
-        }
-    }
+    // pub fn set_active_ram(&mut self, src: usize, dst: ProgramROMDst) {
+    //     match dst {
+    //         ProgramROMDst::One => {
+    //             self.program_rom[src].start_address = PROGRAM_ROM;
+    //             self.active_program_1 = NonNull::new(&mut self.program_rom[src]).unwrap();
+    //         }
+    //         ProgramROMDst::Two => {
+    //             self.program_rom[src].start_address = PROGRAM_ROM_2;
+    //             self.active_program_2 = NonNull::new(&mut self.program_rom[src]).unwrap();
+    //         }
+    //     }
+    // }
 
     pub fn from_program(mut program: Vec<u8>) -> Self {
         program.resize(0x10000 - PROGRAM_ROM as usize, 0);
-        let mut program = RAM{mem: program.into_boxed_slice()};
+        let mut program = RAM{file: program.into_boxed_slice()};
         let ap1 = NonNull::new(&mut program).unwrap();
         let ap2 = NonNull::new(&mut program).unwrap();
         Memory {
@@ -244,7 +232,7 @@ impl Memory {
             if trainer {
                 file.read( &mut ram.as_mut_slice()[0x1000..0x1200])?;
             }
-            Some(RAM{mem: ram})
+            Some(RAM{file: ram})
         } else {
             None
         };
@@ -255,17 +243,21 @@ impl Memory {
         for _ in 0..prg_rom_count {
             let mut prg_rom_buf = Box::new([0u8; PROGRAM_ROM_SIZE as usize]);
             file.read_exact(prg_rom_buf.as_mut_slice())?;
-            program.push(RAM{mem: prg_rom_buf})
+            program.push(RAM{file: prg_rom_buf})
         }
 
         for _ in 0..vrom_count {
             let mut vrom_buf = Box::new([0u8; VROM_SIZE as usize]);
             file.read_exact(vrom_buf.as_mut_slice())?;
-            vrom.push(RAM{mem: vrom_buf})
+            vrom.push(RAM{file: vrom_buf})
         }
 
         let active_program_1 = NonNull::new(&mut program[0]).unwrap();
-        let active_program_2 = NonNull::new(&mut program[0]).unwrap();
+        let active_program_2 = if prg_rom_count == 1 {
+            NonNull::new(&mut program[0]).unwrap()
+        } else {
+            NonNull::new(&mut program[1]).unwrap()
+        };
 
         Ok(Memory{
             program_rom: program,
@@ -277,6 +269,79 @@ impl Memory {
             ppu: PPU::new(vrom),
             _phantom_pin: PhantomPinned
         })
+    }
+
+    pub fn from_nestest_file(path: String) -> Result<Self, NesError> {
+        let mut file = std::fs::File::open(path)?;
+        let mut header = [0u8; 16];
+        if file.read(&mut header)? < 16 {return Err(NesError::FileFormat("file too short"))};
+        if header[0..4] != ['N' as u8, 'E' as u8, 'S' as u8, 0x1a] {
+            return Err(NesError::FileFormat("incorrect identifying bytes, not a .nes file?"))
+        };
+
+        if (header[7] & 0x0c) == 0x08 {eprintln!("Warning: NES2.0 file format unsupported")}
+
+        let prg_rom_count = header[4];
+        let vrom_count = header[5];
+        let rom_control = &header[6..8];
+        let ram_bank_count = header[8];
+
+        let mapper_number = (rom_control[1] & 0xf0) | (rom_control[0] >> 4);
+        let mirroring_type = (rom_control[0] & 1) != 0;
+        let battery_ram = (rom_control[0] & 2) != 0;
+        let trainer = (rom_control[0] & 4) != 0;
+        if !battery_ram && trainer {panic!("idx what happens in this case");}
+
+        let battery_ram = if battery_ram {
+            let mut ram = Box::new([0u8; BATTERY_RAM_SIZE as usize]);
+            if trainer {
+                file.read( &mut ram.as_mut_slice()[0x1000..0x1200])?;
+            }
+            Some(RAM{file: ram})
+        } else {
+            None
+        };
+
+        let mut program = Vec::new();
+        let mut vrom = Vec::new();
+        // Need to mirror, this is just
+        
+        for _ in 0..prg_rom_count {
+            let mut prg_rom_buf = Box::new([0u8; PROGRAM_ROM_SIZE as usize]);
+            file.read_exact(prg_rom_buf.as_mut_slice())?;
+            // MAKE MORE ELEGANT
+            program.push(RAM{file: prg_rom_buf})
+        }
+
+        for _ in 0..vrom_count {
+            let mut vrom_buf = Box::new([0u8; VROM_SIZE as usize]);
+            file.read_exact(vrom_buf.as_mut_slice())?;
+            vrom.push(RAM{file: vrom_buf})
+        }
+
+        // by default load a single program rom which is mirrored
+        let active_program_1 = NonNull::new(&mut program[0]).unwrap();
+        let active_program_2 = if prg_rom_count == 1 {
+            NonNull::new(&mut program[0]).unwrap()
+        } else {
+            NonNull::new(&mut program[1]).unwrap()
+        };
+
+        Ok(Memory{
+            program_rom: program,
+            active_program_1,
+            active_program_2,
+            ram: [0u8; (MMIO - BUILTIN_RAM) as usize],
+            battery_ram: battery_ram,
+            mapper: mapper_number,
+            ppu: PPU::new(vrom),
+            _phantom_pin: PhantomPinned
+        })
+        
+    }
+
+    pub fn get_program_rom(&self, idx: usize) -> &RAM {
+        return &self.program_rom[idx]
     }
 
 

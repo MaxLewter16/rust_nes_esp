@@ -210,9 +210,9 @@ impl PPU {
     pub fn new(vrom: Vec<RAM>) -> Self {
         let mut ppu = PPU{
             state: PPUState::PreRender(0),
-            vram: RAM::new::<{VRAM_SIZE as usize}>(0),
+            vram: RAM::new::<{VRAM_SIZE as usize}>(),
             vrom,
-            sprite_ram: RAM::new::<{SPRAM_SIZE as usize}>(0),
+            sprite_ram: RAM::new::<{SPRAM_SIZE as usize}>(),
             ppu_control_1: PPUControl1::from_bits_truncate(0),
             ppu_control_2: PPUControl2::from_bits_truncate(0),
             ppu_status: PPUStatus::from_bits_truncate(0),
