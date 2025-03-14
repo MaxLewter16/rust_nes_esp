@@ -84,9 +84,10 @@ impl CPU {
             processor_status: ProcessorStatusFlags::from_bits_truncate(0b000000),
         })
     }
+
     pub fn from_file_nestest(path: String) -> Result<Self, NesError> {
         Ok(CPU {
-            memory: Memory::from_nestest_file(path)?,
+            memory: Memory::from_file(path)?,
             program_counter: 0xC000, // Needed to initate logging
             stack_pointer: STACK_RESET - 2, // Stack pointer starts at FD?
             accumulator: 0,
