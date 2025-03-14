@@ -1,6 +1,7 @@
 use rust_nes_esp::cpu::CPU;
 use std::fs::File; // FOr testing NES File
 use std::io::Write;
+
 #[test]
 fn test_nes_execution(){
     let mut cpu = match CPU::from_file_nestest(String::from("test_data/nes_test_data/nestest.nes")) {

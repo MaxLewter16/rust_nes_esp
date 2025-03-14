@@ -97,18 +97,6 @@ impl CPU {
         })
     }
 
-    // pub fn new() -> Self {
-    //     CPU {
-    //         memory: Memory::from_file(""),
-    //         program_counter: 0,
-    //         idx_register_x: 0,
-    //         idx_register_y: 0,
-    //         processor_status: ProcessorStatus::new(),
-    //         stack_pointer: STACK_RESET,
-    //         accumulator: 0
-    //     }
-    // }
-
     // Execute steps strictly for testing using nestest
     pub fn execute_nestest(&mut self, steps: Option<usize>, output_log_path:&str) {
         let mut log_file = File::create(output_log_path).expect("Failed to create log file");
@@ -682,39 +670,39 @@ subtract_with_carry_gen!(sbc_zero_page_y_indirect, CPU::get_zero_page_y_indirect
     Increment/Decrement
 */
 macro_rules! inc_dec_gen {
-    ($name:ident, $target:ident, $operation:tt) => {
+    ($name:ident, $target:ident, $operation:path) => {
         impl CPU {
             pub fn $name(&mut self) {
-                self.$target $operation 1;
+                self.$target = $operation(self.$target, 1);
                 self.update_negative_zero_flags(self.$target);
             }
         }
     };
 }
 macro_rules! inc_dec_mem_gen {
-    ($name:ident, $addr_mode:path, $operation:tt) => {
+    ($name:ident, $addr_mode:path, $operation:path) => {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self);
-                let value: u8 = self.memory[address];
-                self.memory.write(address, value $operation 1);
-                self.update_negative_zero_flags(value $operation 1);
+                let value: u8 = $operation(self.memory[address], 1);
+                self.memory.write(address, value);
+                self.update_negative_zero_flags(value);
             }
         }
     };
 }
-inc_dec_gen!(inc_x, idx_register_x, +=);
-inc_dec_gen!(inc_y, idx_register_y, +=);
-inc_dec_gen!(dec_x, idx_register_x, -=);
-inc_dec_gen!(dec_y, idx_register_y, -=);
-inc_dec_mem_gen!(inc_absolute, CPU::get_absolute, +);
-inc_dec_mem_gen!(inc_absolute_x, CPU::get_absolute_x, +);
-inc_dec_mem_gen!(inc_zero_page, CPU::get_zero_page, +);
-inc_dec_mem_gen!(inc_zero_page_x, CPU::get_zero_page_x, +);
-inc_dec_mem_gen!(dec_absolute, CPU::get_absolute, -);
-inc_dec_mem_gen!(dec_absolute_x, CPU::get_absolute_x, -);
-inc_dec_mem_gen!(dec_zero_page, CPU::get_zero_page, -);
-inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, -);
+inc_dec_gen!(inc_x, idx_register_x, u8::wrapping_add);
+inc_dec_gen!(inc_y, idx_register_y, u8::wrapping_add);
+inc_dec_gen!(dec_x, idx_register_x, u8::wrapping_sub);
+inc_dec_gen!(dec_y, idx_register_y, u8::wrapping_sub);
+inc_dec_mem_gen!(inc_absolute, CPU::get_absolute, u8::wrapping_add);
+inc_dec_mem_gen!(inc_absolute_x, CPU::get_absolute_x, u8::wrapping_add);
+inc_dec_mem_gen!(inc_zero_page, CPU::get_zero_page, u8::wrapping_add);
+inc_dec_mem_gen!(inc_zero_page_x, CPU::get_zero_page_x, u8::wrapping_add);
+inc_dec_mem_gen!(dec_absolute, CPU::get_absolute, u8::wrapping_sub);
+inc_dec_mem_gen!(dec_absolute_x, CPU::get_absolute_x, u8::wrapping_sub);
+inc_dec_mem_gen!(dec_zero_page, CPU::get_zero_page, u8::wrapping_sub);
+inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, u8::wrapping_sub);
 
 /*
     Arithmetic Left Shift
