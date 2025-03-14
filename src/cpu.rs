@@ -105,8 +105,9 @@ impl CPU {
                 let opcode = self.memory[self.program_counter];
 
                 let log_entry = format!(
-                    "{:04X} {:30} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}\n",
+                    "{:04X} OP:({:2X}){:30} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}\n",
                     self.program_counter,
+                    opcode,
                     OP_NAME_MAP[opcode as usize],
                     self.accumulator,
                     self.idx_register_x,
