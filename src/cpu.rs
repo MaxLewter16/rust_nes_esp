@@ -428,12 +428,16 @@ macro_rules! branch_gen {
             pub fn $name(&mut self) {
                 if self.processor_status.contains($flag) {
                     self.program_counter = self.get_relative();
+                } else {
+                    self.program_counter += 1;
                 }
             }
 
             pub fn $inverse_name(&mut self) {
                 if !self.processor_status.contains($flag) {
                     self.program_counter = self.get_relative();
+                } else {
+                    self.program_counter += 1;
                 }
             }
         }
