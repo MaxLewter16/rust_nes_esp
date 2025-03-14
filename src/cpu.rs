@@ -56,6 +56,7 @@ enum Register {
 }
 
 impl CPU {
+    // reset vector points to beginning of program ROM
     pub fn with_program(program: Vec<u8>) -> Self {
         CPU {
             memory: Memory::from_program(program),
@@ -68,10 +69,12 @@ impl CPU {
         }
     }
 
+    // reset vector is taken from memory location 0xfffc
     pub fn from_file(path: String) -> Result<Self, NesError> {
+        let memory = Memory::from_file(path)?;
         Ok(CPU {
-            memory: Memory::from_file(path)?,
-            program_counter: PROGRAM_ROM,
+            program_counter: u16::from_le_bytes([memory[0xfffc], memory[0xfffd]]),
+            memory: memory,
             stack_pointer: STACK_RESET,
             accumulator: 0,
             idx_register_x: 0,
@@ -291,7 +294,7 @@ impl CPU {
         // Assign carry bit based on 0th bit of data
         self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator & 1 == 1);
         // new value is rotated to the right and the top bit is set to the carry bit
-        self.accumulator = (self.accumulator >> 1) | (top_bit << 7);                 
+        self.accumulator = (self.accumulator >> 1) | (top_bit << 7);
         self.update_negative_zero_flags(self.accumulator);
     }
 
@@ -302,7 +305,7 @@ impl CPU {
         // Assign carry bit based on bit 7
         self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >> 7 == 1);
         // new value is rotated to the left and the bottom bit is set to the carry bit
-        self.accumulator = (self.accumulator << 1) | bottom_bit;                 
+        self.accumulator = (self.accumulator << 1) | bottom_bit;
     }
 
     #[inline]
@@ -662,8 +665,8 @@ inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, -);
 
 /*
     Arithmetic Left Shift
-    ASL shifts all of the bits of a memory value or the accumulator one position to the left, moving the value of each bit into the next bit. 
-    Bit 7 is shifted into the carry flag, and 0 is shifted into bit 0. 
+    ASL shifts all of the bits of a memory value or the accumulator one position to the left, moving the value of each bit into the next bit.
+    Bit 7 is shifted into the carry flag, and 0 is shifted into bit 0.
     This is equivalent to multiplying an unsigned value by 2, with carry indicating overflow.
 */
 
@@ -690,7 +693,7 @@ arithmetic_left_shift_gen!(asl_absolute_x, CPU::get_absolute_x);
 
 /*
     Rotate Left
-    shifts a memory value or the accumulator to the left, moving the value of each bit into the next bit and treating the carry flag as though it is both above bit 7 and below bit 0. 
+    shifts a memory value or the accumulator to the left, moving the value of each bit into the next bit and treating the carry flag as though it is both above bit 7 and below bit 0.
     Specifically, the value in carry is shifted into bit 0, and bit 7 is shifted into carry. Rotating left 9 times simply returns the value and carry back to their original state.
 */
 macro_rules! rotate_left_gen {
@@ -705,7 +708,7 @@ macro_rules! rotate_left_gen {
                 // Assign carry bit based on bit 7
                 self.processor_status.set(ProcessorStatusFlags::CARRY, data >> 7 == 1);
                 // new value is rotated to the left and the bottom bit is set to the carry bit
-                data = (data << 1) | bottom_bit;                 
+                data = (data << 1) | bottom_bit;
                 self.memory.write(address, data);
                 self.update_negative_zero_flags(data); // Negative flag should always be clear
             }
@@ -739,8 +742,8 @@ logical_shift_right_gen!(lsr_zero_page_x, CPU::get_zero_page_x);
 logical_shift_right_gen!(lsr_absolute, CPU::get_absolute);
 logical_shift_right_gen!(lsr_absolute_x, CPU::get_absolute_x);
 
-/* ROR shifts a memory value or the accumulator to the right, moving the value of each bit into the next bit and treating the carry flag as though it is both above bit 7 and below bit 0. 
-Specifically, the value in carry is shifted into bit 7, and bit 0 is shifted into carry. 
+/* ROR shifts a memory value or the accumulator to the right, moving the value of each bit into the next bit and treating the carry flag as though it is both above bit 7 and below bit 0.
+Specifically, the value in carry is shifted into bit 7, and bit 0 is shifted into carry.
 Rotating right 9 times simply returns the value and carry back to their original state.
 */
 macro_rules! rotate_right_gen {
@@ -755,7 +758,7 @@ macro_rules! rotate_right_gen {
                 // Assign carry bit based on 0th bit of data
                 self.processor_status.set(ProcessorStatusFlags::CARRY, data & 1 == 1);
                 // new value is rotated to the right and the top bit is set to the carry bit
-                data = (data >> 1) | (top_bit << 7);                 
+                data = (data >> 1) | (top_bit << 7);
                 self.memory.write(address, data);
                 self.update_negative_zero_flags(data); // Negative flag should always be clear
             }
@@ -767,14 +770,14 @@ rotate_right_gen!(ror_zero_page_x, CPU::get_zero_page_x);
 rotate_right_gen!(ror_absolute, CPU::get_absolute);
 rotate_right_gen!(ror_absolute_x, CPU::get_absolute_x);
 
-/* 
-Bit Test- BIT modifies flags, but does not change memory or registers. The zero flag is set depending on the result of the accumulator AND memory value, 
-effectively applying a bitmask and then checking if any bits are set. Bits 7 and 6 of the memory value are loaded directly into the negative and overflow flags, 
+/*
+Bit Test- BIT modifies flags, but does not change memory or registers. The zero flag is set depending on the result of the accumulator AND memory value,
+effectively applying a bitmask and then checking if any bits are set. Bits 7 and 6 of the memory value are loaded directly into the negative and overflow flags,
 allowing them to be easily checked without having to load a mask into A.
 
-Because BIT only changes CPU flags, it is sometimes used to trigger the read side effects of a hardware register without clobbering any CPU registers, 
-or even to waste cycles as a 3-cycle NOP. As an advanced trick, it is occasionally used to hide a 1- or 2-byte instruction in its operand that is only executed 
-if jumped to directly, allowing two code paths to be interleaved. However, because the instruction in the operand is treated as an address from which to read, 
+Because BIT only changes CPU flags, it is sometimes used to trigger the read side effects of a hardware register without clobbering any CPU registers,
+or even to waste cycles as a 3-cycle NOP. As an advanced trick, it is occasionally used to hide a 1- or 2-byte instruction in its operand that is only executed
+if jumped to directly, allowing two code paths to be interleaved. However, because the instruction in the operand is treated as an address from which to read,
 this carries risk of triggering side effects if it reads a hardware register. This trick can be useful when working under tight constraints on space, time, or register usage.
 */
 macro_rules! bit_test_gen {
@@ -798,8 +801,8 @@ bit_test_gen!(bit_absolute, CPU::get_absolute);
 bit_test_gen!(bit_zero_page, CPU::get_zero_page);
 
 /*
-Compare:compares a register to a memory value, setting flags as appropriate but not modifying any registers. The comparison is implemented as a subtraction, 
-setting carry if there is no borrow, zero if the result is 0, and negative if the result is negative. 
+Compare:compares a register to a memory value, setting flags as appropriate but not modifying any registers. The comparison is implemented as a subtraction,
+setting carry if there is no borrow, zero if the result is 0, and negative if the result is negative.
 However, carry and zero are often most easily remembered as inequalities.
 */
 
@@ -818,7 +821,7 @@ macro_rules!  compare_gen{
 
             }
         }
-        
+
     };
 }
 compare_gen!(cmp_immediate, accumulator, CPU::get_immediate);
@@ -1118,7 +1121,7 @@ mod tests {
     ], 0b00000000, 0b10101010);
 
     // test exclusive or
-    test_and_or_instruction!(test_exclusive_or, 3, 
+    test_and_or_instruction!(test_exclusive_or, 3,
     [0x8D, 0x50,0x00, // STA 0x0050
     0xA9, 0b11111111, // LDA 11111111
     0x45, 0x50  // EOR A with 0x50
@@ -1424,7 +1427,7 @@ mod tests {
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::OVERFLOW), false);
 
         }
-    
+
     #[test]
     fn test_cmp_a() {
         let mut cpu = CPU::with_program(vec![

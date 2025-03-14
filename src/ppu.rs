@@ -308,6 +308,8 @@ impl PPU {
         // ! TODO: even/odd frame cycle skip thing
         // ! TODO: sprite rendering
         // ! TODO: sprite hit detection
+        // ! TODO: VBLANK flag
+        // ! TODO: NMI
         match self.state {
             PPUState::PreRender(cycle) => {
                 if cycle + cycles > SCANLINES_PRERENDER * CYCLES_SCANLINE {
@@ -410,7 +412,7 @@ impl PPU {
     #[inline]
     const fn map_pixel_to_pattern(pixel: usize) -> u8 {
         // on average one pixel is rendered each cycle,
-        // Each row of pattern tables corresponds to 8 rows of pixels in a frame, and pattern table has 8 columns of pixels
+        // Each row of pattern tables corresponds to 8 rows of pixels in a frame, and each pattern table has 8 columns of pixels
         ((pixel / (FRAME_WIDTH * 8))*8 + (pixel/FRAME_WIDTH) % 8) as u8
     }
 }
