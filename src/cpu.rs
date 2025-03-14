@@ -235,12 +235,12 @@ impl CPU {
     #[inline(always)]
     fn push_stack(&mut self, data: u8) {
         self.memory.write(self.get_stack(), data);
-        self.stack_pointer -= 1;
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
     }
 
     #[inline(always)]
     fn pop_stack(&mut self) -> u8 {
-        self.stack_pointer += 1;
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
         self.memory[self.get_stack()]
     }
 
