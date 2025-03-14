@@ -277,8 +277,9 @@ impl CPU {
     pub fn break_instr(&mut self) {
         if self.processor_status.contains(ProcessorStatusFlags::INTERRUPT) {
             let pc = self.program_counter.to_le_bytes();
-            self.push_stack(pc[0]);
+            //NOTE: unclear whether the status or PC should be pushed onto the stack first
             self.push_stack(pc[1]);
+            self.push_stack(pc[0]);
             self.push_stack(self.processor_status.bits());
             self.processor_status &= !ProcessorStatusFlags::INTERRUPT;
             self.program_counter = u16::from_le_bytes([self.memory[0xfffe], self.memory[0xffff]]);
@@ -289,8 +290,8 @@ impl CPU {
         let status_retain = self.pop_stack();
         self.processor_status = ProcessorStatusFlags::from_bits_retain(status_retain);
 
-        let upper_pc = self.pop_stack();
         let lower_pc = self.pop_stack();
+        let upper_pc = self.pop_stack();
         self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]);
     }
 
@@ -303,16 +304,16 @@ impl CPU {
     }
 
     pub fn jump_subroutine(&mut self) {
-        let pc = (self.program_counter + 2).to_le_bytes();
-        self.push_stack(pc[0]);
+        let pc = (self.program_counter + 1).to_le_bytes();
         self.push_stack(pc[1]);
+        self.push_stack(pc[0]);
         self.program_counter = self.get_absolute();
     }
 
     pub fn return_from_subroutine(&mut self) {
-        let upper_pc = self.pop_stack();
         let lower_pc = self.pop_stack();
-        self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]);
+        let upper_pc = self.pop_stack();
+        self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]) + 1;
     }
 
     // Arithmetic Shift Left Accumulator - see arithmetic_shift_left_gen for specifics
