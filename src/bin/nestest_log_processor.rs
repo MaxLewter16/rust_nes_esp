@@ -37,3 +37,15 @@ pub fn process_log_file(input_path: &str, output_path: &str) -> io::Result<()> {
 
     Ok(())
 }
+
+
+fn main() {
+    let input_file = "test_data/nes_test_data/nestest.log";
+    let output_file = "test_data/nes_test_data/nestest_log_processed.log";
+
+    if let Err(e) = process_log_file(input_file, output_file) {
+        eprintln!("Error processing file: {}", e);
+    } else {
+        println!("File processed successfully!");
+    }
+}

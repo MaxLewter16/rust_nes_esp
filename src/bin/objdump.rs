@@ -15,17 +15,28 @@ struct ObjDump {
 
     // Number of instructions to display
     #[arg(short, long)]
-    num: Option<usize>
+    num: Option<usize>,
+
+    // Offset into ROM
+    #[arg(short, long)]
+    offset: Option<usize>,
 }
 
 fn obj_dump(obj_dump: ObjDump) -> Result<(), NesError> {
     let mem = Memory::from_file(obj_dump.file_path)?;
-    for (idx, instr) in mem.get_program_rom(obj_dump.program_id.unwrap_or(0))
+    let rom = mem.get_program_rom(obj_dump.program_id.unwrap_or(0));
+    let offset = obj_dump.offset.unwrap_or(0);
+    for (idx, instr) in rom[offset as u16..rom.len() as u16]
         .iter()
         .take(obj_dump.num.unwrap_or(usize::MAX))
         .enumerate()
     {
-        println!("0x{:<8x}:{:}", idx * 8, OP_NAME_MAP[*instr as usize]);
+        let instr_name = if OP_NAME_MAP[*instr as usize] == "! INVALID !" {
+            format!("INVALID - Value:0x{:x} Signed:{:}", *instr, *instr as i8)
+        } else {
+            String::from(OP_NAME_MAP[*instr as usize])
+        };
+        println!("0x{:<8x}:{:}", idx + offset, instr_name);
     }
     Ok(())
 }
