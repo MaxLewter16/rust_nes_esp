@@ -354,6 +354,7 @@ impl CPU {
         self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >> 7 == 1);
         // new value is rotated to the left and the bottom bit is set to the carry bit
         self.accumulator = (self.accumulator << 1) | bottom_bit;
+        self.update_negative_zero_flags(self.accumulator);
     }
 
     #[inline]
