@@ -1,4 +1,4 @@
-use std::{io::{self, Read}, marker::PhantomPinned, ops::{Bound, Deref, DerefMut, Index, IndexMut, Range}, ptr::NonNull, u16};
+use std::{io::{self, Read}, cell::RefCell, marker::PhantomPinned, ops::{Index, IndexMut, Range}, ptr::NonNull, u16};
 use std::result::Result;
 use crate::ppu::PPU;
 

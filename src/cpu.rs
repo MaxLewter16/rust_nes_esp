@@ -218,9 +218,19 @@ impl CPU {
 
     /// Fetches an absolute indirect address value(used for JMP (indirect)).
     fn get_absolute_indirect(&mut self) -> u16 {
-        let addr_ptr = self.get_absolute();
-        let low = self.memory[addr_ptr];
-        let high = self.memory[addr_ptr.wrapping_add(1)];
+        let indirect_low = self.memory[self.program_counter];
+        let indirect_high = self.memory[self.program_counter + 1];
+        self.program_counter += 2;
+
+        let low = self.memory[u16::from_le_bytes([indirect_low, indirect_high])];
+        /*  From "https://www.nesdev.org/wiki/Instruction_reference#JMP"
+            Unfortunately, because of a CPU bug, if this 2-byte variable has an address ending in
+            $FF and thus crosses a page, then the CPU fails to increment the page when reading the
+            second byte and thus reads the wrong address. For example, JMP ($03FF) reads $03FF and
+            $0300 instead of $0400. Care should be taken to ensure this variable does not cross a
+            page.
+         */
+        let high = self.memory[u16::from_le_bytes([indirect_low.wrapping_add(1), indirect_high])];
 
         u16::from_le_bytes([low, high])
     }
