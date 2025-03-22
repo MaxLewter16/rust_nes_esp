@@ -293,9 +293,7 @@ impl CPU {
     }
 
     pub fn return_from_interrupt(&mut self) {
-        // this instruction does not effect the stack pointer
-        let status_retain = self.pop_stack();
-        self.processor_status = ProcessorStatusFlags::from_bits_retain(status_retain);
+        self.pull_status();
 
         let lower_pc = self.pop_stack();
         let upper_pc = self.pop_stack();
@@ -366,8 +364,8 @@ impl CPU {
          self.processor_status &= !(ProcessorStatusFlags::ZERO | ProcessorStatusFlags::NEGATIVE);
          //set flags
          self.processor_status |=
-             (if self.accumulator == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
-             (ProcessorStatusFlags::from_bits_truncate(self.accumulator & ProcessorStatusFlags::NEGATIVE.bits()));
+             (if test == 0 {ProcessorStatusFlags::ZERO} else {ProcessorStatusFlags::empty()}) |
+             (ProcessorStatusFlags::from_bits_truncate(test & ProcessorStatusFlags::NEGATIVE.bits()));
     }
 
 }
