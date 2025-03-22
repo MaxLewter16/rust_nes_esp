@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
+use rust_nes_esp::opmap::OP_NAME_MAP;
 
 pub fn process_log_file(input_path: &str, output_path: &str) -> io::Result<()> {
     let input_file = File::open(input_path)?;   // Open the input file
@@ -32,7 +33,7 @@ pub fn process_log_file(input_path: &str, output_path: &str) -> io::Result<()> {
         }
 
         // Write the formatted line to the output file
-        writeln!(output_file, "{} {} A:{} X:{} Y:{} P:{} SP:{}", address, opcode, a, x, y, p, sp)?;
+        writeln!(output_file, "{:} OP:({:}){:30} A:{:} X:{:} Y:{:} P:{:} SP:{:}", address, opcode, OP_NAME_MAP[u8::from_str_radix(opcode, 16).expect("") as usize], a, x, y, p, sp)?;
     }
 
     Ok(())
@@ -41,7 +42,7 @@ pub fn process_log_file(input_path: &str, output_path: &str) -> io::Result<()> {
 
 fn main() {
     let input_file = "test_data/nes_test_data/nestest.log";
-    let output_file = "test_data/nes_test_data/nestest_log_processed.log";
+    let output_file = "test_data/nes_test_data/nestest_log_processed_1.log";
 
     if let Err(e) = process_log_file(input_file, output_file) {
         eprintln!("Error processing file: {}", e);

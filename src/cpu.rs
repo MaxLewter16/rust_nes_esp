@@ -8,6 +8,7 @@ use std::io::Write;
 use crate::memory::{Memory, NesError, PROGRAM_ROM, MMIO};
 use crate::opmap::{OP_MAP, OP_NAME_MAP};
 
+// TODO: read log file path from environment variable?
 const DEFAULT_LOG_FILE: &'static str = "test_data/nes_test_data/cpu_log.txt";
 
 // Primary Registers?
@@ -96,7 +97,7 @@ impl CPU {
             accumulator: 0,
             idx_register_x: 0,
             idx_register_y: 0,
-            processor_status: ProcessorStatusFlags::from_bits_truncate(0b100100),
+            processor_status: ProcessorStatusFlags::from_bits_truncate(0x24),
         })
     }
 
@@ -117,7 +118,7 @@ impl CPU {
     fn log_cpu(&mut self, log_file: &mut File) {
         let opcode = self.memory[self.program_counter];
         let log_entry = format!(
-            "{:04X} OP:({:2X}){:30} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}\n",
+            "{:04X} OP:({:02X}){:30} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}\n",
             self.program_counter,
             opcode,
             OP_NAME_MAP[opcode as usize],
@@ -264,7 +265,7 @@ impl CPU {
     }
 
     pub fn push_status(&mut self) {
-        self.push_stack(self.processor_status.bits());
+        self.push_stack((self.processor_status | ProcessorStatusFlags::UNUSED | ProcessorStatusFlags::BREAK).bits());
     }
 
     pub fn pull_a(&mut self) {
@@ -274,7 +275,10 @@ impl CPU {
 
     // NOTE: minor inaccuracy: changes to the interrupt flag are delayed a cycle
     pub fn pull_status(&mut self) {
-        self.processor_status = ProcessorStatusFlags::from_bits_retain(self.pop_stack());
+        let mask = ProcessorStatusFlags::UNUSED | ProcessorStatusFlags::BREAK;
+        // the unused and break bits are ignored
+        let new_status = ProcessorStatusFlags::from_bits_retain(self.pop_stack()) & !mask;
+        self.processor_status = (self.processor_status & mask) | new_status;
     }
 
     pub fn break_instr(&mut self) {
@@ -532,6 +536,7 @@ exclusive_or_gen!(exclusive_or_zero_page, CPU::get_zero_page);
 exclusive_or_gen!(exclusive_or_zero_page_x, CPU::get_zero_page_x);
 exclusive_or_gen!(exclusive_or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
 exclusive_or_gen!(exclusive_or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+
 /*
     and instructions
 */
