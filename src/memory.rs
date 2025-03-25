@@ -142,27 +142,24 @@ pub struct Memory {
     mapper: u8, //TODO should be enum probably
 }
 
-impl Index<u16> for Memory {
-    type Output = u8;
-    fn index(&self, address: u16) -> &Self::Output {
+impl Memory {
+    pub fn read(&mut self, address: u16) -> u8 {
         match address {
-            BUILTIN_RAM..MMIO => &self.ram[(address % 0x0800) as usize], // Mirror every 2 KB
+            BUILTIN_RAM..MMIO => self.ram[(address % 0x0800) as usize], // Mirror every 2 KB
             MMIO..EXPANSION_ROM => self.ppu.read(address), // Mirrors every 8 bytes
-            EXPANSION_ROM..SRAM => &0u8, //EXPANSION_ROM
+            EXPANSION_ROM..SRAM => 0u8, //EXPANSION_ROM
             SRAM..PROGRAM_ROM => if let Some(ref ram) = self.battery_ram {
-                &ram[address - BATTERY_RAM]
+                ram[address - BATTERY_RAM]
             } else {
                 // ! What should these reads return
-                &0u8
+                0u8
             },
             // this is safe because active program roms are always selected
-            PROGRAM_ROM..PROGRAM_ROM_2 => unsafe{&self.active_program_1.as_ref()[address - PROGRAM_ROM]},
-            PROGRAM_ROM_2..=u16::MAX => unsafe{&self.active_program_2.as_ref()[address - PROGRAM_ROM_2]},
+            PROGRAM_ROM..PROGRAM_ROM_2 => unsafe{self.active_program_1.as_ref()[address - PROGRAM_ROM]},
+            PROGRAM_ROM_2..=u16::MAX => unsafe{self.active_program_2.as_ref()[address - PROGRAM_ROM_2]},
         }
     }
-}
 
-impl Memory {
     pub fn write(&mut self, address: u16, data: u8) {
         match address {
             BUILTIN_RAM..MMIO => self.ram[(address % 0x0800) as usize] = data, // Mirror every 2 KB
