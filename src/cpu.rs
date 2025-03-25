@@ -79,9 +79,9 @@ impl CPU {
 
     // reset vector is taken from memory location 0xfffc
     pub fn from_file(path: String) -> Result<Self, NesError> {
-        let memory = Memory::from_file(path)?;
+        let mut memory = Memory::from_file(path)?;
         Ok(CPU {
-            program_counter: u16::from_le_bytes([memory[0xfffc], memory[0xfffd]]),
+            program_counter: u16::from_le_bytes([memory.read(0xfffc), memory.read(0xfffd)]),
             memory: memory,
             stack_pointer: STACK_RESET,
             accumulator: 0,
@@ -120,7 +120,7 @@ impl CPU {
     }
 
     fn log_cpu(&mut self, log_file: &mut File) {
-        let opcode = self.memory[self.program_counter];
+        let opcode = self.memory.read(self.program_counter);
         let log_entry = format!(
             "{:04X} OP:({:02X}){:30} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{:}\n",
             self.program_counter,
@@ -155,7 +155,7 @@ impl CPU {
     }
 
     fn advance(&mut self) {
-        let i = OP_MAP[self.memory[self.program_counter] as usize];
+        let i = OP_MAP[self.memory.read(self.program_counter) as usize];
         self.program_counter += 1;
         i(self);
     }
@@ -170,38 +170,38 @@ impl CPU {
         let pc = self.program_counter;
         self.program_counter += 1;
         // assume upper address byte is 0
-        self.memory[pc] as u16
+        self.memory.read(pc) as u16
     }
 
     fn get_zero_page_x(&mut self, _check_page_cross: bool) ->u16{
         let pc = self.program_counter;
         // assume upper address byte is 0
         self.program_counter += 1;
-        self.memory[pc].wrapping_add(self.idx_register_x) as u16
+        self.memory.read(pc).wrapping_add(self.idx_register_x) as u16
     }
 
     fn get_zero_page_y(&mut self, _check_page_cross: bool) ->u16{
         let pc = self.program_counter;
         // assume upper address byte is 0
         self.program_counter += 1;
-        self.memory[pc].wrapping_add(self.idx_register_y) as u16
+        self.memory.read(pc).wrapping_add(self.idx_register_y) as u16
     }
 
     fn get_zero_page_x_indirect(&mut self, _check_page_cross: bool) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
-        let indirect_address = self.memory[pc].wrapping_add(self.idx_register_x);
-        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address.wrapping_add(1) as u16]])
+        let indirect_address = self.memory.read(pc).wrapping_add(self.idx_register_x);
+        u16::from_le_bytes([self.memory.read(indirect_address as u16), self.memory.read(indirect_address.wrapping_add(1) as u16)])
     }
 
     fn get_zero_page_y_indirect(&mut self, check_page_cross: bool) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
     
-        let indirect_address = self.memory[pc];  
+        let indirect_address = self.memory.read(pc);  
         let base_address = u16::from_le_bytes([
-            self.memory[indirect_address as u16],
-            self.memory[indirect_address.wrapping_add(1) as u16]
+            self.memory.read(indirect_address as u16),
+            self.memory.read(indirect_address.wrapping_add(1) as u16)
         ]);
     
         let final_address = base_address.wrapping_add(self.idx_register_y as u16);
@@ -214,8 +214,8 @@ impl CPU {
 
     /// Fetches an absolute address but does NOT return the value.
     fn get_absolute(&mut self, _check_page_cross: bool) -> u16 {
-        let low = self.memory[self.program_counter];
-        let high = self.memory[self.program_counter + 1];
+        let low = self.memory.read(self.program_counter);
+        let high = self.memory.read(self.program_counter + 1);
 
         self.program_counter += 2;
 
@@ -243,11 +243,11 @@ impl CPU {
 
     /// Fetches an absolute indirect address value(used for JMP (indirect)).
     fn get_absolute_indirect(&mut self) -> u16 {
-        let indirect_low = self.memory[self.program_counter];
-        let indirect_high = self.memory[self.program_counter + 1];
+        let indirect_low = self.memory.read(self.program_counter);
+        let indirect_high = self.memory.read(self.program_counter + 1);
         self.program_counter += 2;
 
-        let low = self.memory[u16::from_le_bytes([indirect_low, indirect_high])];
+        let low = self.memory.read(u16::from_le_bytes([indirect_low, indirect_high]));
         /*  From "https://www.nesdev.org/wiki/Instruction_reference#JMP"
             Unfortunately, because of a CPU bug, if this 2-byte variable has an address ending in
             $FF and thus crosses a page, then the CPU fails to increment the page when reading the
@@ -255,14 +255,14 @@ impl CPU {
             $0300 instead of $0400. Care should be taken to ensure this variable does not cross a
             page.
          */
-        let high = self.memory[u16::from_le_bytes([indirect_low.wrapping_add(1), indirect_high])];
+        let high = self.memory.read(u16::from_le_bytes([indirect_low.wrapping_add(1), indirect_high]));
 
         u16::from_le_bytes([low, high])
     }
 
     fn get_relative(&mut self) -> u16 {
         let old_pc = self.program_counter;
-        let offset = (self.memory[old_pc] as i8) as i16;
+        let offset = (self.memory.read(old_pc) as i8) as i16;
         self.program_counter += 1;
         //? should it be allowed to branch outside of program memory
         let final_address = self.program_counter.wrapping_add(offset as u16);
@@ -286,7 +286,7 @@ impl CPU {
     #[inline(always)]
     fn pop_stack(&mut self) -> u8 {
         self.stack_pointer = self.stack_pointer.wrapping_add(1);
-        self.memory[self.get_stack()]
+        self.memory.read(self.get_stack())
     }
 
     pub fn noop(&mut self) {
@@ -300,7 +300,7 @@ impl CPU {
 
     pub fn load_m_a_immediate(&mut self) {
         let address = self.get_immediate(false);
-        self.accumulator = self.memory[address];
+        self.accumulator = self.memory.read(address);
         self.update_negative_zero_flags(self.accumulator);
     }
 
@@ -336,7 +336,7 @@ impl CPU {
             self.push_stack(pc[0]);
             self.push_stack((self.processor_status | ProcessorStatusFlags::BREAK).bits());
             self.processor_status &= !ProcessorStatusFlags::INTERRUPT;
-            self.program_counter = u16::from_le_bytes([self.memory[0xfffe], self.memory[0xffff]]);
+            self.program_counter = u16::from_le_bytes([self.memory.read(0xfffe), self.memory.read(0xffff)]);
             self.cycle_count += 7;
         }
     }
@@ -458,7 +458,7 @@ macro_rules! load_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addressing_mode(self, $check_page_cross);
-                self.$target = self.memory[address];
+                self.$target = self.memory.read(address);
                 self.update_negative_zero_flags(self.$target);
                 self.cycle_count += $num_cycles;
             }
@@ -560,7 +560,7 @@ macro_rules! or_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, $check_page_cross);
-                let data = self.memory[address];
+                let data = self.memory.read(address);
                 self.accumulator |= data;
                 self.update_negative_zero_flags(self.accumulator);
                 self.cycle_count += $num_cycles;
@@ -585,7 +585,7 @@ macro_rules! exclusive_or_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, $check_page_cross);
-                let data = self.memory[address];
+                let data = self.memory.read(address);
                 self.accumulator ^= data;
                 self.update_negative_zero_flags(self.accumulator);
                 self.cycle_count += $num_cycles;
@@ -610,7 +610,7 @@ macro_rules! and_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, $check_page_cross);
-                let data = self.memory[address];
+                let data = self.memory.read(address);
                 self.accumulator &= data;
                 self.update_negative_zero_flags(self.accumulator);
                 self.cycle_count += $num_cycles;
@@ -664,7 +664,7 @@ macro_rules! add_with_carry_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, $check_page_cross);
-                let data = self.memory[address];
+                let data = self.memory.read(address);
 
                 // Extract carry bit as u8 (0 or 1)
                 let carry = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
@@ -713,7 +713,7 @@ macro_rules! subtract_with_carry_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, $check_page_cross);
-                let data = self.memory[address];
+                let data = self.memory.read(address);
 
                 // Extract carry bit as u8 (0 or 1)
                 let carry = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
@@ -770,7 +770,7 @@ macro_rules! inc_dec_mem_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, false);
-                let value: u8 = $operation(self.memory[address], 1);
+                let value: u8 = $operation(self.memory.read(address), 1);
                 self.memory.write(address, value);
                 self.update_negative_zero_flags(value);
                 self.cycle_count += $num_cycles;
@@ -804,7 +804,7 @@ macro_rules! arithmetic_left_shift_gen {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
                 let address = $addr_mode(self, false);
-                let mut data = self.memory[address];
+                let mut data = self.memory.read(address);
                 // Assign carry bit based on top bit of data
                 self.processor_status.set(ProcessorStatusFlags::CARRY, data >> 7 == 1);
                 data <<= 1;
@@ -831,7 +831,7 @@ macro_rules! rotate_left_gen {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
                 let address = $addr_mode(self, false);
-                let mut data = self.memory[address];
+                let mut data = self.memory.read(address);
                 // carry bit becomes bottom bit
                 let bottom_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
                 // Assign carry bit based on bit 7
@@ -857,7 +857,7 @@ macro_rules! logical_shift_right_gen {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
                 let address = $addr_mode(self, false);
-                let mut data = self.memory[address];
+                let mut data = self.memory.read(address);
                 // Assign carry bit based on 0th bit of data
                 self.processor_status.set(ProcessorStatusFlags::CARRY, data & 1 == 1);
                 data >>= 1;
@@ -883,7 +883,7 @@ macro_rules! rotate_right_gen {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
                 let address = $addr_mode(self, false);
-                let mut data = self.memory[address];
+                let mut data = self.memory.read(address);
                 // carry bit becomes top bit
                 let top_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
                 // Assign carry bit based on 0th bit of data
@@ -917,7 +917,7 @@ macro_rules! bit_test_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, false);
-                let data = self.memory[address];
+                let data = self.memory.read(address);
 
                 // Set the NEGATIVE and OVERFLOW flags based on memory bits 7 and 6
                 self.processor_status.set(ProcessorStatusFlags::NEGATIVE, (data & ProcessorStatusFlags::NEGATIVE.bits()) != 0);
@@ -944,7 +944,7 @@ macro_rules!  compare_gen{
         impl CPU{
             pub fn $name(&mut self) {
                 let address = $addr_mode(self, $check_page_cross);
-                let data = self.memory[address];
+                let data = self.memory.read(address);
 
                 let result = self.$register.wrapping_sub(data);
 
@@ -1057,7 +1057,7 @@ mod tests {
         }
         for i in 0..1<<7 {
             let a: u16 = i * (MMIO / (1<<7));
-            assert_eq!(cpu.memory[a], 0xaa);
+            assert_eq!(cpu.memory.read(a), 0xaa);
         }
     }
 
@@ -1067,17 +1067,17 @@ mod tests {
         //test absolute
         let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0x8d, 0xff, 0x10]);
         cpu.execute(Some(2));
-        assert_eq!(cpu.memory[0x10ff], 0xaa);
+        assert_eq!(cpu.memory.read(0x10ff), 0xaa);
 
         //test zero page
         let mut cpu = CPU::with_program(vec![0x09, 0xaa, 0x85, 0xff]);
         cpu.execute(Some(2));
-        assert_eq!(cpu.memory[0x00ff], 0xaa);
+        assert_eq!(cpu.memory.read(0x00ff), 0xaa);
 
         //test zero page x
         let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa2, 0xf0, 0x95, 0x0f, 0xa9, 0x00, 0xb5, 0x0f]);
         cpu.execute(Some(5));
-        assert!(cpu.memory[0xff] == 0xaa);
+        assert!(cpu.memory.read(0xff) == 0xaa);
         assert_eq!(cpu.accumulator, 0xaa);
 
         //test zero page y
@@ -1088,7 +1088,7 @@ mod tests {
         //ld  0xf(y)
         let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa2, 0xf0, 0x95, 0x0f, 0xa0, 0xf0, 0xb6, 0x0f]);
         cpu.execute(Some(5));
-        assert!(cpu.memory[0xff] == 0xaa);
+        assert!(cpu.memory.read(0xff) == 0xaa);
         assert_eq!(cpu.idx_register_x, 0xaa);
 
         //test absolute y
@@ -1099,7 +1099,7 @@ mod tests {
          */
         let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0xa0, 0xff, 0x99, 0x01, 0x10]);
         cpu.execute(Some(3));
-        assert!(cpu.memory[0x1100] == 0xaa);
+        assert!(cpu.memory.read(0x1100) == 0xaa);
 
         //test absolute x
         /*
@@ -1109,7 +1109,7 @@ mod tests {
         */
         let mut cpu = CPU::with_program(vec![0xa9,0xaa,0xa2,0xff,0x9d,0x01,0x10]);
         cpu.execute(Some(3));
-        assert!(cpu.memory[0x1100] == 0xaa);
+        assert!(cpu.memory.read(0x1100) == 0xaa);
 
         //test absolute indirect
 
@@ -1123,7 +1123,7 @@ mod tests {
          */
         let mut cpu = CPU::with_program(vec![ 0xa9, 0xaa, 0x85, 0xcc, 0xa2, 0x0c, 0x81, 0xc0 ]);
         cpu.execute(Some(4));
-        assert!(cpu.memory[0xaa] == 0xaa);
+        assert!(cpu.memory.read(0xaa) == 0xaa);
 
         //test zero-page y indirect
         /*
@@ -1134,7 +1134,7 @@ mod tests {
          */
         let mut cpu = CPU::with_program(vec![0xa9, 0xaa, 0x85, 0xc0, 0xa0, 0x0c, 0x91, 0xc0 ]);
         cpu.execute(Some(4));
-        assert!(cpu.memory[0xb6] == 0xaa);
+        assert!(cpu.memory.read(0xb6) == 0xaa);
 
         //test relative, use branch on carry reset
         //branch forward by maximum offset 3 times, branch back by max offset 3 times
@@ -1380,9 +1380,9 @@ mod tests {
          */
         let mut cpu = CPU::with_program(vec![0xe6, 0x00, 0xe8, 0xc8, 0xc6, 0x00, 0xca, 0x88]);
         cpu.execute(Some(3));
-        assert!(1 == cpu.memory[0] && 1 == cpu.idx_register_x && 1 == cpu.idx_register_y);
+        assert!(1 == cpu.memory.read(0) && 1 == cpu.idx_register_x && 1 == cpu.idx_register_y);
         cpu.execute(Some(3));
-        assert!(0 == cpu.memory[0] && 0 == cpu.idx_register_x && 0 == cpu.idx_register_y);
+        assert!(0 == cpu.memory.read(0) && 0 == cpu.idx_register_x && 0 == cpu.idx_register_y);
     }
 
     // test asl instructions
@@ -1395,7 +1395,7 @@ mod tests {
             0x0E, 0x50, 0x00, // ASL Absolute 0x0050
             ]);
             cpu.execute(Some(3));
-            assert_eq!(cpu.memory[0x50], 0b11111110);
+            assert_eq!(cpu.memory.read(0x50), 0b11111110);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
     }
     #[test]
@@ -1406,7 +1406,7 @@ mod tests {
             0x0E, 0x50, 0x00, // ASL Absolute 0x0050
             ]);
             cpu.execute(Some(3));
-            assert_eq!(cpu.memory[0x50], 0b11111110);
+            assert_eq!(cpu.memory.read(0x50), 0b11111110);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
     }
     #[test]
@@ -1430,7 +1430,7 @@ mod tests {
             0x4E, 0x50, 0x00, // lsr Absolute 0x0050
             ]);
             cpu.execute(Some(3));
-            assert_eq!(cpu.memory[0x50], 0b00111111);
+            assert_eq!(cpu.memory.read(0x50), 0b00111111);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
     }
     #[test]
@@ -1441,7 +1441,7 @@ mod tests {
             0x4E, 0x50, 0x00, // lsr Absolute 0x0050
             ]);
             cpu.execute(Some(3));
-            assert_eq!(cpu.memory[0x50], 0b01111111);
+            assert_eq!(cpu.memory.read(0x50), 0b01111111);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
     }
     #[test]
@@ -1466,7 +1466,7 @@ mod tests {
             0x6E, 0x50, 0x00, // ror Absolute 0x0050
             ]);
             cpu.execute(Some(4));
-            assert_eq!(cpu.memory[0x50], 0b10111111);
+            assert_eq!(cpu.memory.read(0x50), 0b10111111);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
     }
     #[test]
@@ -1478,7 +1478,7 @@ mod tests {
             0x4E, 0x50, 0x00, // ror Absolute 0x0050
             ]);
             cpu.execute(Some(4));
-            assert_eq!(cpu.memory[0x50], 0b01111111);
+            assert_eq!(cpu.memory.read(0x50), 0b01111111);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
     }
     #[test]
@@ -1503,7 +1503,7 @@ mod tests {
             0x2E, 0x50, 0x00, // rol Absolute 0x0050
             ]);
             cpu.execute(Some(4));
-            assert_eq!(cpu.memory[0x50], 0b11111111);
+            assert_eq!(cpu.memory.read(0x50), 0b11111111);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), false);
     }
     #[test]
@@ -1515,7 +1515,7 @@ mod tests {
             0x2E, 0x50, 0x00, // rol Absolute 0x0050
             ]);
             cpu.execute(Some(4));
-            assert_eq!(cpu.memory[0x50], 0b11111100);
+            assert_eq!(cpu.memory.read(0x50), 0b11111100);
             assert_eq!(cpu.processor_status.contains(ProcessorStatusFlags::CARRY), true);
     }
     #[test]

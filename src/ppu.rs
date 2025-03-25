@@ -1,7 +1,7 @@
 
 use crate::memory::{NesError, MMIO, RAM};
 use bitflags::{bitflags, Flags};
-use std::{cell::RefCell, u8};
+use std::u8;
 #[cfg(feature = "image")]
 use image::{GrayImage, RgbImage};
 
@@ -196,12 +196,8 @@ pub struct PPU {
     ppu_control_2: PPUControl2,
     ppu_status: PPUStatus,
     spr_ram_address: u8,
-    // Allow mutability on reads of PPU through non-mutable reference.
-    // This is purely interior state, a reference to this data should never shared.
-    // Modifying this data through a non-mutable reference won't panic as long
-    // as a reference to this data is never shared.
-    vram_address: RefCell<u16>,
-    byte_shift: RefCell<u8>,
+    vram_address: u16,
+    byte_shift: u8,
     x_scroll: u8,
     y_scroll: u8
 }
@@ -218,8 +214,8 @@ impl PPU {
             ppu_control_2: PPUControl2::from_bits_truncate(0),
             ppu_status: PPUStatus::from_bits_truncate(0),
             spr_ram_address: 0,
-            vram_address: 0.into(),
-            byte_shift: 8.into(),
+            vram_address: 0,
+            byte_shift: 8,
             x_scroll: 0,
             y_scroll: 0,
         };
@@ -242,20 +238,20 @@ impl PPU {
         self.vram.as_slice_mut()[dst*PATTERN_TABLE_SIZE..(dst+1)*PATTERN_TABLE_SIZE].copy_from_slice(self.vrom[src].as_slice());
     }
 
-    pub fn read(& self, address: u16) -> &u8 {
+    pub fn read(&mut self, address: u16) -> u8 {
         match address {
             0x2002 => {
-                self.byte_shift.replace(8);
-                &self.ppu_status.0
+                self.byte_shift = 8;
+                self.ppu_status.0
             }
-            0x2004 => &self.sprite_ram[self.spr_ram_address as u16],
+            0x2004 => self.sprite_ram[self.spr_ram_address as u16],
             0x2007 => {
-                let vaddress = *self.vram_address.borrow();
-                let tmp = &self.vram[vaddress];
-                self.vram_address.replace(vaddress.wrapping_add(if self.ppu_control_1.contains(PPUControl1::AddressIncrement) {1} else {32}));
+                let vaddress = self.vram_address;
+                let tmp = self.vram[vaddress];
+                self.vram_address = vaddress.wrapping_add(if self.ppu_control_1.contains(PPUControl1::AddressIncrement) {1} else {32});
                 tmp
             },
-            _ => &0,
+            _ => 0,
         }
     }
 
@@ -272,31 +268,30 @@ impl PPU {
     }
 
     pub fn set_scroll(&mut self, data: u8) {
-        if *self.byte_shift.borrow() != 0 {
+        if self.byte_shift != 0 {
             self.x_scroll = data;
         } else {
             self.y_scroll = data;
         }
-        if *self.byte_shift.borrow() == 0 {self.byte_shift.replace(8);} else {self.byte_shift.replace(0);}
+        if self.byte_shift == 0 {self.byte_shift = 8;} else {self.byte_shift = 0;}
     }
 
     pub fn set_vram_address(&mut self, data: u8) {
-        let mut vram_address = self.vram_address.borrow_mut();
-        let byte_shift = *self.byte_shift.borrow();
         //clear bits to write
-        *vram_address &= !(0xff << byte_shift);
+        self.vram_address &= !(0xff << self.byte_shift);
         //write address portion, ignore upper two bits
-        *vram_address |= ((data as u16) << byte_shift) & 0xa0;
-        if byte_shift == 0 {self.byte_shift.replace(8);} else {self.byte_shift.replace(0);}
-        if self.ppu_control_1.contains(PPUControl1::AddressIncrement) {*vram_address += 32} else {*vram_address += 1}
+        self.vram_address |= ((data as u16) << self.byte_shift) & 0xa0;
+        if self.byte_shift == 0 {self.byte_shift = 8;} else {self.byte_shift = 0;}
     }
 
     pub fn write_spram(&mut self, data: u8) {
         self.sprite_ram[self.spr_ram_address as u16] = data;
+        self.spr_ram_address = self.spr_ram_address.wrapping_add(1);
     }
 
     pub fn write_vram(&mut self, data: u8) {
-        self.vram[*self.vram_address.borrow() % VRAM_SIZE] = data;
+        self.vram[self.vram_address % VRAM_SIZE] = data;
+        self.vram_address = self.vram_address.wrapping_add(if self.ppu_control_1.contains(PPUControl1::AddressIncrement) {1} else {32});
     }
 
     pub fn ignore(&mut self, _data: u8) {}
