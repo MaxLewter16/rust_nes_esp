@@ -20,6 +20,7 @@ pub fn process_log_file(input_path: &str, output_path: &str) -> io::Result<()> {
         let mut y = "";
         let mut p = "";
         let mut sp = "";
+        let mut cyc = "";
 
         for (i, part) in parts.iter().enumerate() {
             match *part {
@@ -28,12 +29,13 @@ pub fn process_log_file(input_path: &str, output_path: &str) -> io::Result<()> {
                 "Y" => y = parts[i + 1],
                 "P" => p = parts[i + 1],
                 "SP" => sp = parts[i + 1],
+                "CYC" => cyc = parts[i + 1],
                 _ => {}
             }
         }
 
         // Write the formatted line to the output file
-        writeln!(output_file, "{:} OP:({:}){:30} A:{:} X:{:} Y:{:} P:{:} SP:{:}", address, opcode, OP_NAME_MAP[u8::from_str_radix(opcode, 16).expect("") as usize], a, x, y, p, sp)?;
+        writeln!(output_file, "{:} OP:({:}){:30} A:{:} X:{:} Y:{:} P:{:} SP:{:} CYC:{:}", address, opcode, OP_NAME_MAP[u8::from_str_radix(opcode, 16).expect("") as usize], a, x, y, p, sp, cyc)?;
     }
 
     Ok(())
@@ -42,7 +44,7 @@ pub fn process_log_file(input_path: &str, output_path: &str) -> io::Result<()> {
 
 fn main() {
     let input_file = "test_data/nes_test_data/nestest.log";
-    let output_file = "test_data/nes_test_data/nestest_log_processed.log";
+    let output_file = "test_data/nes_test_data/nestest_log_processed_cyc.log";
 
     if let Err(e) = process_log_file(input_file, output_file) {
         eprintln!("Error processing file: {}", e);

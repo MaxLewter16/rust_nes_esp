@@ -54,6 +54,7 @@ pub struct CPU {
     pub idx_register_x: u8,
     pub idx_register_y: u8,
     pub processor_status: ProcessorStatusFlags,
+    pub cycle_count: u32,
 }
 
 enum Register {
@@ -72,6 +73,7 @@ impl CPU {
             idx_register_x: 0,
             idx_register_y: 0,
             processor_status: ProcessorStatusFlags::from_bits_truncate(0b000000),
+            cycle_count: 7, // starts at 7?
         }
     }
 
@@ -86,6 +88,7 @@ impl CPU {
             idx_register_x: 0,
             idx_register_y: 0,
             processor_status: ProcessorStatusFlags::from_bits_truncate(0b000000),
+            cycle_count: 7, // starts at 7?
         })
     }
 
@@ -98,6 +101,7 @@ impl CPU {
             idx_register_x: 0,
             idx_register_y: 0,
             processor_status: ProcessorStatusFlags::from_bits_truncate(0x24),
+            cycle_count: 7, // starts at 7?
         })
     }
 
@@ -118,7 +122,7 @@ impl CPU {
     fn log_cpu(&mut self, log_file: &mut File) {
         let opcode = self.memory[self.program_counter];
         let log_entry = format!(
-            "{:04X} OP:({:02X}){:30} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X}\n",
+            "{:04X} OP:({:02X}){:30} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} CYC:{:}\n",
             self.program_counter,
             opcode,
             OP_NAME_MAP[opcode as usize],
@@ -126,7 +130,8 @@ impl CPU {
             self.idx_register_x,
             self.idx_register_y,
             self.processor_status.bits(),
-            self.stack_pointer
+            self.stack_pointer,
+            self.cycle_count
         );
         log_file.write_all(log_entry.as_bytes()).expect("Failed to write log");
     }
@@ -155,49 +160,60 @@ impl CPU {
         i(self);
     }
 
-    fn get_immediate(&mut self) -> u16 {
+    fn get_immediate(&mut self, _check_page_cross: bool) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
         pc
     }
 
-    fn get_zero_page(&mut self) -> u16 {
+    fn get_zero_page(&mut self, _check_page_cross: bool) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
         // assume upper address byte is 0
         self.memory[pc] as u16
     }
 
-    fn get_zero_page_x(&mut self) ->u16{
+    fn get_zero_page_x(&mut self, _check_page_cross: bool) ->u16{
         let pc = self.program_counter;
         // assume upper address byte is 0
         self.program_counter += 1;
         self.memory[pc].wrapping_add(self.idx_register_x) as u16
     }
 
-    fn get_zero_page_y(&mut self) ->u16{
+    fn get_zero_page_y(&mut self, _check_page_cross: bool) ->u16{
         let pc = self.program_counter;
         // assume upper address byte is 0
         self.program_counter += 1;
         self.memory[pc].wrapping_add(self.idx_register_y) as u16
     }
 
-    fn get_zero_page_x_indirect(&mut self) -> u16 {
+    fn get_zero_page_x_indirect(&mut self, _check_page_cross: bool) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
         let indirect_address = self.memory[pc].wrapping_add(self.idx_register_x);
         u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address.wrapping_add(1) as u16]])
     }
 
-    fn get_zero_page_y_indirect(&mut self) -> u16 {
+    fn get_zero_page_y_indirect(&mut self, check_page_cross: bool) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
-        let indirect_address = self.memory[pc];
-        u16::from_le_bytes([self.memory[indirect_address as u16], self.memory[indirect_address.wrapping_add(1) as u16]]).wrapping_add(self.idx_register_y as u16)
+    
+        let indirect_address = self.memory[pc];  
+        let base_address = u16::from_le_bytes([
+            self.memory[indirect_address as u16],
+            self.memory[indirect_address.wrapping_add(1) as u16]
+        ]);
+    
+        let final_address = base_address.wrapping_add(self.idx_register_y as u16);
+            
+        if check_page_cross && (base_address & 0xFF00) != (final_address & 0xFF00){
+            self.cycle_count += 1;  // Page crossing incurs +1 cycle
+        }
+        final_address
     }
 
     /// Fetches an absolute address but does NOT return the value.
-    fn get_absolute(&mut self) -> u16 {
+    fn get_absolute(&mut self, _check_page_cross: bool) -> u16 {
         let low = self.memory[self.program_counter];
         let high = self.memory[self.program_counter + 1];
 
@@ -206,14 +222,23 @@ impl CPU {
         u16::from_le_bytes([low, high])
     }
 
-    fn get_absolute_x(&mut self) -> u16 {
-        let base_addr = self.get_absolute();
-        base_addr.wrapping_add(self.idx_register_x as u16)
+    fn get_absolute_x(&mut self, check_page_cross: bool) -> u16 {
+        let base_address = self.get_absolute(false);
+        let final_address = base_address.wrapping_add(self.idx_register_x as u16);
+        if check_page_cross && (base_address & 0xFF00) != (final_address & 0xFF00){
+            self.cycle_count += 1;  // Page crossing incurs +1 cycle
+        }
+        final_address
     }
 
-    fn get_absolute_y(&mut self) -> u16 {
-        let base_addr = self.get_absolute();
-        base_addr.wrapping_add(self.idx_register_y as u16)
+    fn get_absolute_y(&mut self, check_page_cross: bool) -> u16 {
+        let base_address = self.get_absolute(false);
+        let final_address = base_address.wrapping_add(self.idx_register_y as u16);
+        // Check for page crossing by comparing high bytes (page cross occurs every 0xFF)
+        if check_page_cross && (base_address & 0xFF00) != (final_address & 0xFF00){
+            self.cycle_count += 1;  // Page crossing incurs +1 cycle
+        }
+        final_address
     }
 
     /// Fetches an absolute indirect address value(used for JMP (indirect)).
@@ -236,10 +261,16 @@ impl CPU {
     }
 
     fn get_relative(&mut self) -> u16 {
-        let offset = (self.memory[self.program_counter] as i8) as i16;
+        let old_pc = self.program_counter;
+        let offset = (self.memory[old_pc] as i8) as i16;
         self.program_counter += 1;
         //? should it be allowed to branch outside of program memory
-        self.program_counter.wrapping_add(offset as u16)
+        let final_address = self.program_counter.wrapping_add(offset as u16);
+        // Check for page crossing
+        if (old_pc & 0xFF00) != (final_address & 0xFF00){
+            self.cycle_count += 1;  // Page crossing incurs +1 cycle
+        }
+        final_address
     }
 
     fn get_stack(&self) -> u16 {
@@ -258,29 +289,35 @@ impl CPU {
         self.memory[self.get_stack()]
     }
 
-    pub fn noop(&mut self) {}
+    pub fn noop(&mut self) {
+        self.cycle_count += 2;
+    }
 
     pub fn transfer_x_sp(&mut self) {
         self.stack_pointer = self.idx_register_x;
+        self.cycle_count += 2;
     }
 
     pub fn load_m_a_immediate(&mut self) {
-        let address = self.get_immediate();
+        let address = self.get_immediate(false);
         self.accumulator = self.memory[address];
         self.update_negative_zero_flags(self.accumulator);
     }
 
     pub fn push_a(&mut self) {
         self.push_stack(self.accumulator);
+        self.cycle_count += 3;
     }
 
     pub fn push_status(&mut self) {
         self.push_stack((self.processor_status | ProcessorStatusFlags::UNUSED | ProcessorStatusFlags::BREAK).bits());
+        self.cycle_count += 3;
     }
 
     pub fn pull_a(&mut self) {
         self.accumulator = self.pop_stack();
         self.update_negative_zero_flags(self.accumulator);
+        self.cycle_count += 4;
     }
 
     // NOTE: minor inaccuracy: changes to the interrupt flag are delayed a cycle
@@ -289,6 +326,7 @@ impl CPU {
         // the unused and break bits are ignored
         let new_status = ProcessorStatusFlags::from_bits_retain(self.pop_stack()) & !mask;
         self.processor_status = (self.processor_status & mask) | new_status;
+        self.cycle_count += 4;
     }
 
     pub fn break_instr(&mut self) {
@@ -299,6 +337,7 @@ impl CPU {
             self.push_stack((self.processor_status | ProcessorStatusFlags::BREAK).bits());
             self.processor_status &= !ProcessorStatusFlags::INTERRUPT;
             self.program_counter = u16::from_le_bytes([self.memory[0xfffe], self.memory[0xffff]]);
+            self.cycle_count += 7;
         }
     }
 
@@ -308,27 +347,32 @@ impl CPU {
         let lower_pc = self.pop_stack();
         let upper_pc = self.pop_stack();
         self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]);
+        self.cycle_count += 2; //+4 from pull_status for a total of 6
     }
 
     pub fn jump_absolute(&mut self) {
-        self.program_counter = self.get_absolute();
+        self.program_counter = self.get_absolute(false);
+        self.cycle_count += 3;
     }
 
     pub fn jump_absolute_indirect(&mut self) {
         self.program_counter = self.get_absolute_indirect();
+        self.cycle_count += 5;
     }
 
     pub fn jump_subroutine(&mut self) {
         let pc = (self.program_counter + 1).to_le_bytes();
         self.push_stack(pc[1]);
         self.push_stack(pc[0]);
-        self.program_counter = self.get_absolute();
+        self.program_counter = self.get_absolute(false);
+        self.cycle_count += 6;
     }
 
     pub fn return_from_subroutine(&mut self) {
         let lower_pc = self.pop_stack();
         let upper_pc = self.pop_stack();
         self.program_counter = u16::from_le_bytes([lower_pc, upper_pc]) + 1;
+        self.cycle_count += 6;
     }
 
     // Arithmetic Shift Left Accumulator - see arithmetic_shift_left_gen for specifics
@@ -336,6 +380,7 @@ impl CPU {
         self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator >> 7 == 1);
         self.accumulator <<= 1;
         self.update_negative_zero_flags(self.accumulator);
+        self.cycle_count += 2;
     }
 
     // Logical Shift Right Accumulator - see logical_shift_right_gen for specifics
@@ -343,6 +388,7 @@ impl CPU {
         self.processor_status.set(ProcessorStatusFlags::CARRY, self.accumulator & 1 == 1);
         self.accumulator >>= 1;
         self.update_negative_zero_flags(self.accumulator);
+        self.cycle_count += 2;
     }
 
     // Rotate Right Accumulator - see rotate_right_gen for specifics
@@ -354,6 +400,7 @@ impl CPU {
         // new value is rotated to the right and the top bit is set to the carry bit
         self.accumulator = (self.accumulator >> 1) | (top_bit << 7);
         self.update_negative_zero_flags(self.accumulator);
+        self.cycle_count += 2
     }
 
     // Rotate Left Accumulator - See rotate_left_gen for specifics
@@ -365,6 +412,7 @@ impl CPU {
         // new value is rotated to the left and the bottom bit is set to the carry bit
         self.accumulator = (self.accumulator << 1) | bottom_bit;
         self.update_negative_zero_flags(self.accumulator);
+        self.cycle_count += 2;
     }
 
     #[inline]
@@ -391,6 +439,7 @@ macro_rules! transfer_gen {
             pub fn $name(&mut self) {
                 self.$target = self.$source;
                 self.update_negative_zero_flags(self.$target);
+                self.cycle_count += 2;
             }
         }
     };
@@ -405,36 +454,37 @@ transfer_gen!(transfer_sp_x, stack_pointer, idx_register_x);
     load instructions
 */
 macro_rules! load_gen {
-    ($name: ident, $addressing_mode: ident, $target: ident) => {
+    ($name: ident, $addressing_mode: path, $target: ident, $check_page_cross:literal, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = self.$addressing_mode();
+                let address = $addressing_mode(self, $check_page_cross);
                 self.$target = self.memory[address];
                 self.update_negative_zero_flags(self.$target);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-load_gen!(load_a_immediate, get_immediate, accumulator);
-load_gen!(load_a_absolute, get_absolute, accumulator);
-load_gen!(load_a_absolute_x, get_absolute_x, accumulator);
-load_gen!(load_a_absolute_y, get_absolute_y, accumulator);
-load_gen!(load_a_zero_page, get_zero_page, accumulator);
-load_gen!(load_a_zero_page_x, get_zero_page_x, accumulator);
-load_gen!(load_a_zero_page_x_indirect, get_zero_page_x_indirect, accumulator);
-load_gen!(load_a_zero_page_y_indirect, get_zero_page_y_indirect, accumulator);
+load_gen!(load_a_immediate, CPU::get_immediate, accumulator, false, 2);
+load_gen!(load_a_absolute, CPU::get_absolute, accumulator, false, 4);
+load_gen!(load_a_absolute_x, CPU::get_absolute_x, accumulator, true, 4);
+load_gen!(load_a_absolute_y, CPU::get_absolute_y, accumulator, true, 4);
+load_gen!(load_a_zero_page, CPU::get_zero_page, accumulator, false, 3);
+load_gen!(load_a_zero_page_x, CPU::get_zero_page_x, accumulator, false, 4);
+load_gen!(load_a_zero_page_x_indirect, CPU::get_zero_page_x_indirect, accumulator, false, 6);
+load_gen!(load_a_zero_page_y_indirect, CPU::get_zero_page_y_indirect, accumulator, true, 5);
 
-load_gen!(load_x_immediate, get_immediate, idx_register_x);
-load_gen!(load_x_absolute, get_absolute, idx_register_x);
-load_gen!(load_x_absolute_y, get_absolute_y, idx_register_x);
-load_gen!(load_x_zero_page, get_zero_page, idx_register_x);
-load_gen!(load_x_zero_page_y, get_zero_page_y, idx_register_x);
+load_gen!(load_x_immediate, CPU::get_immediate, idx_register_x, false, 2);
+load_gen!(load_x_absolute, CPU::get_absolute, idx_register_x, false, 4);
+load_gen!(load_x_absolute_y, CPU::get_absolute_y, idx_register_x, true, 4);
+load_gen!(load_x_zero_page, CPU::get_zero_page, idx_register_x, false, 3);
+load_gen!(load_x_zero_page_y, CPU::get_zero_page_y, idx_register_x, false, 4);
 
-load_gen!(load_y_immediate, get_immediate, idx_register_y);
-load_gen!(load_y_absolute, get_absolute, idx_register_y);
-load_gen!(load_y_absolute_x, get_absolute_x, idx_register_y);
-load_gen!(load_y_zero_page, get_zero_page, idx_register_y);
-load_gen!(load_y_zero_page_x, get_zero_page_x, idx_register_y);
+load_gen!(load_y_immediate, CPU::get_immediate, idx_register_y, false, 2);
+load_gen!(load_y_absolute, CPU::get_absolute, idx_register_y, false, 4);
+load_gen!(load_y_absolute_x, CPU::get_absolute_x, idx_register_y, true, 4);
+load_gen!(load_y_zero_page, CPU::get_zero_page, idx_register_y, false, 3);
+load_gen!(load_y_zero_page_x, CPU::get_zero_page_x, idx_register_y, false, 4);
 
 /*
     branch instructions
@@ -445,16 +495,20 @@ macro_rules! branch_gen {
             pub fn $name(&mut self) {
                 if self.processor_status.contains($flag) {
                     self.program_counter = self.get_relative();
+                    self.cycle_count += 3; //+1 if page crossing (checked in get_relative)
                 } else {
                     self.program_counter += 1;
+                    self.cycle_count += 2; 
                 }
             }
 
             pub fn $inverse_name(&mut self) {
                 if !self.processor_status.contains($flag) {
                     self.program_counter = self.get_relative();
+                    self.cycle_count += 3; //+1 if page crossing (checked in get_relative)
                 } else {
                     self.program_counter += 1;
+                    self.cycle_count += 2; 
                 }
             }
         }
@@ -469,112 +523,116 @@ branch_gen!(branch_on_overflow_set, branch_on_overflow_reset, ProcessorStatusFla
     store instructions
 */
 macro_rules! store_gen {
-    ($name: ident, $p: path, $register:ident) => {
+    ($name: ident, $addr_mode: path, $register:ident, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $p(self);
-                self.memory.write(address, self.$register)
+                let address = $addr_mode(self, false);
+                self.memory.write(address, self.$register);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
 // store for accumulator
-store_gen!(store_a_absolute, CPU::get_absolute, accumulator);
-store_gen!(store_a_absolute_x, CPU::get_absolute_x, accumulator);
-store_gen!(store_a_absolute_y, CPU::get_absolute_y, accumulator);
-store_gen!(store_a_zero_page, CPU::get_zero_page, accumulator);
-store_gen!(store_a_zero_page_x, CPU::get_zero_page_x, accumulator);
-store_gen!(store_a_zero_page_y, CPU::get_zero_page_y, accumulator);
-store_gen!(store_a_zero_page_x_indirect, CPU::get_zero_page_x_indirect, accumulator);
-store_gen!(store_a_zero_page_y_indirect, CPU::get_zero_page_y_indirect, accumulator);
+store_gen!(store_a_absolute, CPU::get_absolute, accumulator, 4);
+store_gen!(store_a_absolute_x, CPU::get_absolute_x, accumulator, 5);
+store_gen!(store_a_absolute_y, CPU::get_absolute_y, accumulator, 5);
+store_gen!(store_a_zero_page, CPU::get_zero_page, accumulator, 3);
+store_gen!(store_a_zero_page_x, CPU::get_zero_page_x, accumulator, 4);
+store_gen!(store_a_zero_page_x_indirect, CPU::get_zero_page_x_indirect, accumulator, 6);
+store_gen!(store_a_zero_page_y_indirect, CPU::get_zero_page_y_indirect, accumulator, 6);
 
 // store for reg x
-store_gen!(store_x_absolute, CPU::get_absolute, idx_register_x);
-store_gen!(store_x_zero_page, CPU::get_zero_page, idx_register_x);
-store_gen!(store_x_zero_page_y, CPU::get_zero_page_y, idx_register_x);
+store_gen!(store_x_absolute, CPU::get_absolute, idx_register_x, 4);
+store_gen!(store_x_zero_page, CPU::get_zero_page, idx_register_x, 3);
+store_gen!(store_x_zero_page_y, CPU::get_zero_page_y, idx_register_x, 4);
 
 // store for reg y
-store_gen!(store_y_absolute, CPU::get_absolute, idx_register_y);
-store_gen!(store_y_zero_page, CPU::get_zero_page, idx_register_y);
-store_gen!(store_y_zero_page_x, CPU::get_zero_page_x, idx_register_y);
+store_gen!(store_y_absolute, CPU::get_absolute, idx_register_y, 4);
+store_gen!(store_y_zero_page, CPU::get_zero_page, idx_register_y, 3);
+store_gen!(store_y_zero_page_x, CPU::get_zero_page_x, idx_register_y, 4);
 
 /*
     or instructions
 */
 macro_rules! or_gen {
-    ($name: ident, $p: path) => {
+    ($name: ident, $addr_mode: path, $check_page_cross:literal, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $p(self);
+                let address = $addr_mode(self, $check_page_cross);
                 let data = self.memory[address];
                 self.accumulator |= data;
                 self.update_negative_zero_flags(self.accumulator);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-or_gen!(or_immediate, CPU::get_immediate);
-or_gen!(or_absolute, CPU::get_absolute);
-or_gen!(or_absolute_x, CPU::get_absolute_x);
-or_gen!(or_absolute_y, CPU::get_absolute_y);
-or_gen!(or_zero_page, CPU::get_zero_page);
-or_gen!(or_zero_page_x, CPU::get_zero_page_x);
-or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
-or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+or_gen!(or_immediate, CPU::get_immediate, false, 2);
+or_gen!(or_absolute, CPU::get_absolute, false, 4);
+or_gen!(or_absolute_x, CPU::get_absolute_x, true, 4);
+or_gen!(or_absolute_y, CPU::get_absolute_y, true, 4);
+or_gen!(or_zero_page, CPU::get_zero_page, false, 3);
+or_gen!(or_zero_page_x, CPU::get_zero_page_x, false, 4);
+or_gen!(or_zero_page_x_indirect, CPU::get_zero_page_x_indirect, false, 6);
+or_gen!(or_zero_page_y_indirect, CPU::get_zero_page_y_indirect, false, 5);
 
 /*
     exclusive or instructions
 */
 macro_rules! exclusive_or_gen {
-    ($name: ident, $p: path) => {
+    ($name: ident, $addr_mode: path, $check_page_cross:literal, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $p(self);
+                let address = $addr_mode(self, $check_page_cross);
                 let data = self.memory[address];
                 self.accumulator ^= data;
                 self.update_negative_zero_flags(self.accumulator);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-exclusive_or_gen!(exclusive_or_immediate, CPU::get_immediate);
-exclusive_or_gen!(exclusive_or_absolute, CPU::get_absolute);
-exclusive_or_gen!(exclusive_or_absolute_x, CPU::get_absolute_x);
-exclusive_or_gen!(exclusive_or_absolute_y, CPU::get_absolute_y);
-exclusive_or_gen!(exclusive_or_zero_page, CPU::get_zero_page);
-exclusive_or_gen!(exclusive_or_zero_page_x, CPU::get_zero_page_x);
-exclusive_or_gen!(exclusive_or_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
-exclusive_or_gen!(exclusive_or_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+exclusive_or_gen!(exclusive_or_immediate, CPU::get_immediate, false, 2);
+exclusive_or_gen!(exclusive_or_absolute, CPU::get_absolute, false, 4);
+exclusive_or_gen!(exclusive_or_absolute_x, CPU::get_absolute_x, true, 4);
+exclusive_or_gen!(exclusive_or_absolute_y, CPU::get_absolute_y, true, 4);
+exclusive_or_gen!(exclusive_or_zero_page, CPU::get_zero_page, false, 3);
+exclusive_or_gen!(exclusive_or_zero_page_x, CPU::get_zero_page_x, false, 4);
+exclusive_or_gen!(exclusive_or_zero_page_x_indirect, CPU::get_zero_page_x_indirect, false, 6);
+exclusive_or_gen!(exclusive_or_zero_page_y_indirect, CPU::get_zero_page_y_indirect, true, 5);
 
 /*
     and instructions
 */
 macro_rules! and_gen {
-    ($name: ident, $p: path) => {
+    ($name: ident, $addr_mode: path, $check_page_cross:literal, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $p(self);
+                let address = $addr_mode(self, $check_page_cross);
                 let data = self.memory[address];
                 self.accumulator &= data;
                 self.update_negative_zero_flags(self.accumulator);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-and_gen!(and_immediate, CPU::get_immediate);
-and_gen!(and_absolute, CPU::get_absolute);
-and_gen!(and_absolute_x, CPU::get_absolute_x);
-and_gen!(and_absolute_y, CPU::get_absolute_y);
-and_gen!(and_zero_page, CPU::get_zero_page);
-and_gen!(and_zero_page_x, CPU::get_zero_page_x);
-and_gen!(and_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
-and_gen!(and_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+and_gen!(and_immediate, CPU::get_immediate, false, 2);
+and_gen!(and_absolute, CPU::get_absolute, false, 4);
+and_gen!(and_absolute_x, CPU::get_absolute_x, true, 4);
+and_gen!(and_absolute_y, CPU::get_absolute_y, true, 4);
+and_gen!(and_zero_page, CPU::get_zero_page, false, 3);
+and_gen!(and_zero_page_x, CPU::get_zero_page_x, false, 4);
+and_gen!(and_zero_page_x_indirect, CPU::get_zero_page_x_indirect, false, 6);
+and_gen!(and_zero_page_y_indirect, CPU::get_zero_page_y_indirect, true, 5);
 
 macro_rules! clear_flag_gen {
     ($name:ident, $flag:expr) => {
         impl CPU {
             pub fn $name(&mut self) {
                 self.processor_status &= !$flag;
+                self.cycle_count += 2;
             }
         }
     };
@@ -589,6 +647,7 @@ macro_rules! set_flag_gen {
         impl CPU {
             pub fn $name(&mut self) {
                 self.processor_status |= $flag;
+                self.cycle_count += 2;
             }
         }
     };
@@ -601,10 +660,10 @@ set_flag_gen!(set_interrupt, ProcessorStatusFlags::INTERRUPT);
     add with carry
 */
 macro_rules! add_with_carry_gen {
-    ($name:ident, $addr_mode:path) => {
+    ($name:ident, $addr_mode:path, $check_page_cross:literal, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, $check_page_cross);
                 let data = self.memory[address];
 
                 // Extract carry bit as u8 (0 or 1)
@@ -631,27 +690,29 @@ macro_rules! add_with_carry_gen {
 
                 self.accumulator = sum;
                 self.update_negative_zero_flags(self.accumulator);
+                //Page crossing is handled in address_mode
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-add_with_carry_gen!(adc_immediate, CPU::get_immediate);
-add_with_carry_gen!(adc_absolute, CPU::get_absolute);
-add_with_carry_gen!(adc_absolute_x, CPU::get_absolute_x);
-add_with_carry_gen!(adc_absolute_y, CPU::get_absolute_y);
-add_with_carry_gen!(adc_zero_page, CPU::get_zero_page);
-add_with_carry_gen!(adc_zero_page_x, CPU::get_zero_page_x);
-add_with_carry_gen!(adc_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
-add_with_carry_gen!(adc_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+add_with_carry_gen!(adc_immediate, CPU::get_immediate, false, 2);
+add_with_carry_gen!(adc_absolute, CPU::get_absolute, false, 4);
+add_with_carry_gen!(adc_absolute_x, CPU::get_absolute_x, true, 4);
+add_with_carry_gen!(adc_absolute_y, CPU::get_absolute_y, true, 4);
+add_with_carry_gen!(adc_zero_page, CPU::get_zero_page, false, 3);
+add_with_carry_gen!(adc_zero_page_x, CPU::get_zero_page_x, false, 4);
+add_with_carry_gen!(adc_zero_page_x_indirect, CPU::get_zero_page_x_indirect, false, 6);
+add_with_carry_gen!(adc_zero_page_y_indirect, CPU::get_zero_page_y_indirect, true, 5);
 
 /*
     subtract with carry
 */
 macro_rules! subtract_with_carry_gen {
-    ($name:ident, $addr_mode:path) => {
+    ($name:ident, $addr_mode:path, $check_page_cross:literal, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, $check_page_cross);
                 let data = self.memory[address];
 
                 // Extract carry bit as u8 (0 or 1)
@@ -676,56 +737,59 @@ macro_rules! subtract_with_carry_gen {
 
                 self.accumulator = sum;
                 self.update_negative_zero_flags(self.accumulator);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-subtract_with_carry_gen!(sbc_immediate, CPU::get_immediate);
-subtract_with_carry_gen!(sbc_absolute, CPU::get_absolute);
-subtract_with_carry_gen!(sbc_absolute_x, CPU::get_absolute_x);
-subtract_with_carry_gen!(sbc_absolute_y, CPU::get_absolute_y);
-subtract_with_carry_gen!(sbc_zero_page, CPU::get_zero_page);
-subtract_with_carry_gen!(sbc_zero_page_x, CPU::get_zero_page_x);
-subtract_with_carry_gen!(sbc_zero_page_x_indirect, CPU::get_zero_page_x_indirect);
-subtract_with_carry_gen!(sbc_zero_page_y_indirect, CPU::get_zero_page_y_indirect);
+subtract_with_carry_gen!(sbc_immediate, CPU::get_immediate, false, 2);
+subtract_with_carry_gen!(sbc_absolute, CPU::get_absolute, false, 4);
+subtract_with_carry_gen!(sbc_absolute_x, CPU::get_absolute_x, true, 4);
+subtract_with_carry_gen!(sbc_absolute_y, CPU::get_absolute_y, true, 4);
+subtract_with_carry_gen!(sbc_zero_page, CPU::get_zero_page, false, 3);
+subtract_with_carry_gen!(sbc_zero_page_x, CPU::get_zero_page_x, false, 4);
+subtract_with_carry_gen!(sbc_zero_page_x_indirect, CPU::get_zero_page_x_indirect, false, 6);
+subtract_with_carry_gen!(sbc_zero_page_y_indirect, CPU::get_zero_page_y_indirect, false, 5);
 
 /*
     Increment/Decrement
 */
 macro_rules! inc_dec_gen {
-    ($name:ident, $target:ident, $operation:path) => {
+    ($name:ident, $target:ident, $operation:path, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
                 self.$target = $operation(self.$target, 1);
                 self.update_negative_zero_flags(self.$target);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
 macro_rules! inc_dec_mem_gen {
-    ($name:ident, $addr_mode:path, $operation:path) => {
+    ($name:ident, $addr_mode:path, $operation:path, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, false);
                 let value: u8 = $operation(self.memory[address], 1);
                 self.memory.write(address, value);
                 self.update_negative_zero_flags(value);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-inc_dec_gen!(inc_x, idx_register_x, u8::wrapping_add);
-inc_dec_gen!(inc_y, idx_register_y, u8::wrapping_add);
-inc_dec_gen!(dec_x, idx_register_x, u8::wrapping_sub);
-inc_dec_gen!(dec_y, idx_register_y, u8::wrapping_sub);
-inc_dec_mem_gen!(inc_absolute, CPU::get_absolute, u8::wrapping_add);
-inc_dec_mem_gen!(inc_absolute_x, CPU::get_absolute_x, u8::wrapping_add);
-inc_dec_mem_gen!(inc_zero_page, CPU::get_zero_page, u8::wrapping_add);
-inc_dec_mem_gen!(inc_zero_page_x, CPU::get_zero_page_x, u8::wrapping_add);
-inc_dec_mem_gen!(dec_absolute, CPU::get_absolute, u8::wrapping_sub);
-inc_dec_mem_gen!(dec_absolute_x, CPU::get_absolute_x, u8::wrapping_sub);
-inc_dec_mem_gen!(dec_zero_page, CPU::get_zero_page, u8::wrapping_sub);
-inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, u8::wrapping_sub);
+inc_dec_gen!(inc_x, idx_register_x, u8::wrapping_add, 2);
+inc_dec_gen!(inc_y, idx_register_y, u8::wrapping_add, 2);
+inc_dec_gen!(dec_x, idx_register_x, u8::wrapping_sub, 2);
+inc_dec_gen!(dec_y, idx_register_y, u8::wrapping_sub, 2);
+inc_dec_mem_gen!(inc_absolute, CPU::get_absolute, u8::wrapping_add, 6);
+inc_dec_mem_gen!(inc_absolute_x, CPU::get_absolute_x, u8::wrapping_add, 7);
+inc_dec_mem_gen!(inc_zero_page, CPU::get_zero_page, u8::wrapping_add, 5);
+inc_dec_mem_gen!(inc_zero_page_x, CPU::get_zero_page_x, u8::wrapping_add, 6);
+inc_dec_mem_gen!(dec_absolute, CPU::get_absolute, u8::wrapping_sub, 6);
+inc_dec_mem_gen!(dec_absolute_x, CPU::get_absolute_x, u8::wrapping_sub, 7);
+inc_dec_mem_gen!(dec_zero_page, CPU::get_zero_page, u8::wrapping_sub, 5);
+inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, u8::wrapping_sub, 6);
 
 /*
     Arithmetic Left Shift
@@ -735,25 +799,26 @@ inc_dec_mem_gen!(dec_zero_page_x, CPU::get_zero_page_x, u8::wrapping_sub);
 */
 
 macro_rules! arithmetic_left_shift_gen {
-    ($name:ident, $addr_mode:path) => {
+    ($name:ident, $addr_mode:path, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, false);
                 let mut data = self.memory[address];
                 // Assign carry bit based on top bit of data
                 self.processor_status.set(ProcessorStatusFlags::CARRY, data >> 7 == 1);
                 data <<= 1;
                 self.memory.write(address, data);
                 self.update_negative_zero_flags(data);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-arithmetic_left_shift_gen!(asl_zero_page, CPU::get_zero_page);
-arithmetic_left_shift_gen!(asl_zero_page_x, CPU::get_zero_page_x);
-arithmetic_left_shift_gen!(asl_absolute, CPU::get_absolute);
-arithmetic_left_shift_gen!(asl_absolute_x, CPU::get_absolute_x);
+arithmetic_left_shift_gen!(asl_zero_page, CPU::get_zero_page, 5);
+arithmetic_left_shift_gen!(asl_zero_page_x, CPU::get_zero_page_x, 6);
+arithmetic_left_shift_gen!(asl_absolute, CPU::get_absolute, 6);
+arithmetic_left_shift_gen!(asl_absolute_x, CPU::get_absolute_x, 7);
 
 /*
     Rotate Left
@@ -761,11 +826,11 @@ arithmetic_left_shift_gen!(asl_absolute_x, CPU::get_absolute_x);
     Specifically, the value in carry is shifted into bit 0, and bit 7 is shifted into carry. Rotating left 9 times simply returns the value and carry back to their original state.
 */
 macro_rules! rotate_left_gen {
-    ($name:ident, $addr_mode:path) => {
+    ($name:ident, $addr_mode:path, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, false);
                 let mut data = self.memory[address];
                 // carry bit becomes bottom bit
                 let bottom_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
@@ -775,47 +840,49 @@ macro_rules! rotate_left_gen {
                 data = (data << 1) | bottom_bit;
                 self.memory.write(address, data);
                 self.update_negative_zero_flags(data); // Negative flag should always be clear
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-rotate_left_gen!(rol_zero_page, CPU::get_zero_page);
-rotate_left_gen!(rol_zero_page_x, CPU::get_zero_page_x);
-rotate_left_gen!(rol_absolute, CPU::get_absolute);
-rotate_left_gen!(rol_absolute_x, CPU::get_absolute_x);
+rotate_left_gen!(rol_zero_page, CPU::get_zero_page, 5);
+rotate_left_gen!(rol_zero_page_x, CPU::get_zero_page_x, 6);
+rotate_left_gen!(rol_absolute, CPU::get_absolute, 6);
+rotate_left_gen!(rol_absolute_x, CPU::get_absolute_x, 7);
 
 
 macro_rules! logical_shift_right_gen {
-    ($name:ident, $addr_mode:path) => {
+    ($name:ident, $addr_mode:path, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, false);
                 let mut data = self.memory[address];
                 // Assign carry bit based on 0th bit of data
                 self.processor_status.set(ProcessorStatusFlags::CARRY, data & 1 == 1);
                 data >>= 1;
                 self.memory.write(address, data);
                 self.update_negative_zero_flags(data); // Negative flag should always be clear
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-logical_shift_right_gen!(lsr_zero_page, CPU::get_zero_page);
-logical_shift_right_gen!(lsr_zero_page_x, CPU::get_zero_page_x);
-logical_shift_right_gen!(lsr_absolute, CPU::get_absolute);
-logical_shift_right_gen!(lsr_absolute_x, CPU::get_absolute_x);
+logical_shift_right_gen!(lsr_zero_page, CPU::get_zero_page, 5);
+logical_shift_right_gen!(lsr_zero_page_x, CPU::get_zero_page_x, 6);
+logical_shift_right_gen!(lsr_absolute, CPU::get_absolute, 6);
+logical_shift_right_gen!(lsr_absolute_x, CPU::get_absolute_x, 7);
 
 /* ROR shifts a memory value or the accumulator to the right, moving the value of each bit into the next bit and treating the carry flag as though it is both above bit 7 and below bit 0.
 Specifically, the value in carry is shifted into bit 7, and bit 0 is shifted into carry.
 Rotating right 9 times simply returns the value and carry back to their original state.
 */
 macro_rules! rotate_right_gen {
-    ($name:ident, $addr_mode:path) => {
+    ($name:ident, $addr_mode:path, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
                 // Get the address using the provided addressing mode
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, false);
                 let mut data = self.memory[address];
                 // carry bit becomes top bit
                 let top_bit = if self.processor_status.contains(ProcessorStatusFlags::CARRY) { 1 } else { 0 };
@@ -825,14 +892,15 @@ macro_rules! rotate_right_gen {
                 data = (data >> 1) | (top_bit << 7);
                 self.memory.write(address, data);
                 self.update_negative_zero_flags(data); // Negative flag should always be clear
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-rotate_right_gen!(ror_zero_page, CPU::get_zero_page);
-rotate_right_gen!(ror_zero_page_x, CPU::get_zero_page_x);
-rotate_right_gen!(ror_absolute, CPU::get_absolute);
-rotate_right_gen!(ror_absolute_x, CPU::get_absolute_x);
+rotate_right_gen!(ror_zero_page, CPU::get_zero_page, 5);
+rotate_right_gen!(ror_zero_page_x, CPU::get_zero_page_x, 6);
+rotate_right_gen!(ror_absolute, CPU::get_absolute, 6);
+rotate_right_gen!(ror_absolute_x, CPU::get_absolute_x, 7);
 
 /*
 Bit Test- BIT modifies flags, but does not change memory or registers. The zero flag is set depending on the result of the accumulator AND memory value,
@@ -845,10 +913,10 @@ if jumped to directly, allowing two code paths to be interleaved. However, becau
 this carries risk of triggering side effects if it reads a hardware register. This trick can be useful when working under tight constraints on space, time, or register usage.
 */
 macro_rules! bit_test_gen {
-    ($name:ident, $addr_mode:path) => {
+    ($name:ident, $addr_mode:path, $num_cycles:literal) => {
         impl CPU {
             pub fn $name(&mut self) {
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, false);
                 let data = self.memory[address];
 
                 // Set the NEGATIVE and OVERFLOW flags based on memory bits 7 and 6
@@ -857,12 +925,13 @@ macro_rules! bit_test_gen {
 
                 // Zero flag is set if (A & memory) == 0
                 self.processor_status.set(ProcessorStatusFlags::ZERO, (self.accumulator & data) == 0);
+                self.cycle_count += $num_cycles;
             }
         }
     };
 }
-bit_test_gen!(bit_absolute, CPU::get_absolute);
-bit_test_gen!(bit_zero_page, CPU::get_zero_page);
+bit_test_gen!(bit_absolute, CPU::get_absolute, 4);
+bit_test_gen!(bit_zero_page, CPU::get_zero_page, 3);
 
 /*
 Compare:compares a register to a memory value, setting flags as appropriate but not modifying any registers. The comparison is implemented as a subtraction,
@@ -871,10 +940,10 @@ However, carry and zero are often most easily remembered as inequalities.
 */
 
 macro_rules!  compare_gen{
-    ($name: ident, $register: ident, $addr_mode:path) => {
+    ($name: ident, $register: ident, $addr_mode:path, $check_page_cross:literal, $num_cycles:literal) => {
         impl CPU{
             pub fn $name(&mut self) {
-                let address = $addr_mode(self);
+                let address = $addr_mode(self, $check_page_cross);
                 let data = self.memory[address];
 
                 let result = self.$register.wrapping_sub(data);
@@ -882,26 +951,27 @@ macro_rules!  compare_gen{
                 self.processor_status.set(ProcessorStatusFlags::CARRY, self.$register >= data);
                 self.processor_status.set(ProcessorStatusFlags::ZERO, self.$register == data);
                 self.processor_status.set(ProcessorStatusFlags::NEGATIVE, result & 0x80 != 0);
+                self.cycle_count += $num_cycles;
 
             }
         }
 
     };
 }
-compare_gen!(cmp_immediate, accumulator, CPU::get_immediate);
-compare_gen!(cmp_absolute, accumulator, CPU::get_absolute);
-compare_gen!(cmp_absolute_x, accumulator, CPU::get_absolute_x);
-compare_gen!(cmp_absolute_y, accumulator, CPU::get_absolute_y);
-compare_gen!(cmp_zero_page, accumulator, CPU::get_zero_page);
-compare_gen!(cmp_zero_page_x, accumulator, CPU::get_zero_page_x);
-compare_gen!(cmp_zero_page_x_indirect, accumulator, CPU::get_zero_page_x_indirect);
-compare_gen!(cmp_zero_page_y_indirect, accumulator, CPU::get_zero_page_y_indirect);
-compare_gen!(cpx_immediate, idx_register_x, CPU::get_immediate);
-compare_gen!(cpx_absolute, idx_register_x, CPU::get_absolute);
-compare_gen!(cpx_zero_page, idx_register_x, CPU::get_zero_page);
-compare_gen!(cpy_immediate, idx_register_y, CPU::get_immediate);
-compare_gen!(cpy_absolute, idx_register_y, CPU::get_absolute);
-compare_gen!(cpy_zero_page, idx_register_y, CPU::get_zero_page);
+compare_gen!(cmp_immediate, accumulator, CPU::get_immediate, false, 2);
+compare_gen!(cmp_absolute, accumulator, CPU::get_absolute, false, 4);
+compare_gen!(cmp_absolute_x, accumulator, CPU::get_absolute_x, true, 4);
+compare_gen!(cmp_absolute_y, accumulator, CPU::get_absolute_y, true, 4);
+compare_gen!(cmp_zero_page, accumulator, CPU::get_zero_page, false, 3);
+compare_gen!(cmp_zero_page_x, accumulator, CPU::get_zero_page_x, false, 4);
+compare_gen!(cmp_zero_page_x_indirect, accumulator, CPU::get_zero_page_x_indirect, false, 6);
+compare_gen!(cmp_zero_page_y_indirect, accumulator, CPU::get_zero_page_y_indirect, true, 5);
+compare_gen!(cpx_immediate, idx_register_x, CPU::get_immediate, false, 2);
+compare_gen!(cpx_absolute, idx_register_x, CPU::get_absolute, false, 4);
+compare_gen!(cpx_zero_page, idx_register_x, CPU::get_zero_page, false, 3);
+compare_gen!(cpy_immediate, idx_register_y, CPU::get_immediate, false, 2);
+compare_gen!(cpy_absolute, idx_register_y, CPU::get_absolute, false, 4);
+compare_gen!(cpy_zero_page, idx_register_y, CPU::get_zero_page, false, 3);
 
 
 
