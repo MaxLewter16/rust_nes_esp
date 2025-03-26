@@ -197,15 +197,15 @@ impl CPU {
     fn get_zero_page_y_indirect(&mut self, check_page_cross: bool) -> u16 {
         let pc = self.program_counter;
         self.program_counter += 1;
-    
-        let indirect_address = self.memory.read(pc);  
+
+        let indirect_address = self.memory.read(pc);
         let base_address = u16::from_le_bytes([
             self.memory.read(indirect_address as u16),
             self.memory.read(indirect_address.wrapping_add(1) as u16)
         ]);
-    
+
         let final_address = base_address.wrapping_add(self.idx_register_y as u16);
-            
+
         if check_page_cross && (base_address & 0xFF00) != (final_address & 0xFF00){
             self.cycle_count += 1;  // Page crossing incurs +1 cycle
         }
@@ -261,13 +261,12 @@ impl CPU {
     }
 
     fn get_relative(&mut self) -> u16 {
-        let old_pc = self.program_counter;
-        let offset = (self.memory.read(old_pc) as i8) as i16;
+        let offset = (self.memory.read(self.program_counter) as i8) as i16;
         self.program_counter += 1;
         //? should it be allowed to branch outside of program memory
         let final_address = self.program_counter.wrapping_add(offset as u16);
         // Check for page crossing
-        if (old_pc & 0xFF00) != (final_address & 0xFF00){
+        if (self.program_counter & 0xFF00) != (final_address & 0xFF00){
             self.cycle_count += 1;  // Page crossing incurs +1 cycle
         }
         final_address
@@ -498,7 +497,7 @@ macro_rules! branch_gen {
                     self.cycle_count += 3; //+1 if page crossing (checked in get_relative)
                 } else {
                     self.program_counter += 1;
-                    self.cycle_count += 2; 
+                    self.cycle_count += 2;
                 }
             }
 
@@ -508,7 +507,7 @@ macro_rules! branch_gen {
                     self.cycle_count += 3; //+1 if page crossing (checked in get_relative)
                 } else {
                     self.program_counter += 1;
-                    self.cycle_count += 2; 
+                    self.cycle_count += 2;
                 }
             }
         }
